@@ -1,0 +1,15 @@
+[Unit]
+Description=Refurbished Linux memory report on the console
+# Only when the operator asked for it on the kernel command line, which is what
+# the "Memory report" boot entry does. Never runs on a normal boot.
+ConditionKernelCommandLine=refurb.measure=1
+After=graphical.target refurb-session.service
+Wants=refurb-session.service
+
+[Service]
+Type=oneshot
+# Give the session time to settle: this is an idle-desktop measurement, not a
+# measurement of the boot burst.
+ExecStartPre=/bin/sleep 20
+ExecStart=/usr/lib/refurb/memory-report /dev/ttyS0
+RemainAfterExit=yes

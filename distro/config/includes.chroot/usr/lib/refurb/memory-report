@@ -1,0 +1,60 @@
+#!/bin/sh
+# Honest memory report for a running desktop.
+#
+# Summed RSS double-counts every shared page (libc, fonts, the compositor's
+# buffers), so the headline figure here is the sum of PSS from
+# /proc/<pid>/smaps_rollup: each page is charged once, split between the
+# processes that share it. MemAvailable is what the machine can actually hand
+# to Brave. ZRAM is reported on its own line, never folded into RAM.
+set -u
+out=${1:-/dev/ttyS0}
+tmp=/run/refurb-memory.txt
+
+{
+    echo
+    echo "=========== REFURBISHED LINUX MEMORY REPORT ==========="
+    echo "kernel: $(uname -r)   cpus: $(nproc)   date: $(date -Is)"
+    echo
+    echo "-- system (from /proc/meminfo, in MiB) --"
+    awk '/^(MemTotal|MemFree|MemAvailable|Cached|Buffers|SwapTotal|SwapFree|Shmem|Slab|SReclaimable):/ {
+             printf "%-14s %8.1f\n", $1, $2/1024
+         }' /proc/meminfo
+    echo
+    echo "-- swappiness / zram --"
+    cat /proc/sys/vm/swappiness | sed 's/^/vm.swappiness: /'
+    if [ -r /sys/block/zram0/disksize ]; then
+        printf "zram0 disksize: %.1f MiB\n" "$(awk '{print $1/1048576}' /sys/block/zram0/disksize)"
+        for f in mem_used_total orig_data_size compr_data_size; do
+            [ -r "/sys/block/zram0/$f" ] && printf "zram0 %-16s %.1f MiB\n" "$f:" \
+                "$(awk '{print $1/1048576}' "/sys/block/zram0/$f")"
+        done
+    else
+        echo "zram0: not present"
+    fi
+    echo
+    echo "-- per-process PSS (top 12) --"
+    total=0
+    for d in /proc/[0-9]*; do
+        [ -r "$d/smaps_rollup" ] || continue
+        pss=$(awk '/^Pss:/{s+=$2} END{print s+0}' "$d/smaps_rollup" 2>/dev/null)
+        [ "${pss:-0}" -gt 0 ] || continue
+        printf "%8.1f MiB  %s\n" "$(awk -v p="$pss" 'BEGIN{print p/1024}')" "$(cat "$d/comm" 2>/dev/null)"
+        total=$((total + pss))
+    done | sort -rn > /tmp/pss-all.txt
+    head -12 /tmp/pss-all.txt
+    echo
+    printf "sum of PSS (all processes): %.1f MiB\n" "$(awk '{s+=$1} END{print s/1024}' /tmp/pss-all.txt)"
+    echo "processes counted: $(wc -l < /tmp/pss-all.txt)"
+    echo
+    echo "-- services running --"
+    printf "systemd units active: %s   user processes: %s\n" \
+        "$(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | wc -l)" \
+        "$(ps -e --no-headers 2>/dev/null | wc -l)"
+    echo
+    echo "-- session --"
+    systemctl is-active refurb-session.service 2>/dev/null | sed 's/^/refurb-session: /'
+    loginctl list-sessions --no-legend 2>/dev/null | sed 's/^/session: /'
+    echo "======================================================="
+} > "$tmp" 2>&1
+cat "$tmp"
+cat "$tmp" > "$out" 2>/dev/null || true

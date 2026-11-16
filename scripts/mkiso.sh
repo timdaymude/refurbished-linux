@@ -151,6 +151,10 @@ stage_configure() {
     [ -f "$DISTRO/config/packages.chroot/refurb-shell_${VERSION}_amd64.deb" ] || \
         "$ROOT/scripts/build-shell.sh"
 
+    # An earlier build may have shipped read-only files (sudoers.d is 0440);
+    # as the unprivileged build user that makes this copy fail and silently
+    # skips every hook after it. Make the tree writable for its owner first.
+    chmod -R u+rwX "$ROOTFS" 2>/dev/null || true
     cp -a "$DISTRO/config/includes.chroot/." "$ROOTFS/"
     install -d "$ROOTFS/tmp/debs"
     cp "$DISTRO"/config/packages.chroot/*.deb "$ROOTFS/tmp/debs/"
@@ -220,19 +224,33 @@ PROMPT 0
 TIMEOUT 30
 DEFAULT live
 
-MENU TITLE Refurbished Linux 0.2 - Focus
+MENU TITLE Refurbished Linux 0.3 - First Desktop
 
 LABEL live
   MENU LABEL Start Refurbished Linux
   KERNEL /live/vmlinuz
-  APPEND initrd=/live/initrd.img boot=live components console=ttyS0,115200 quiet splash
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 quiet splash
 
 LABEL live-nosplash
   MENU LABEL Start Refurbished Linux (verbose boot)
   KERNEL /live/vmlinuz
-  APPEND initrd=/live/initrd.img boot=live components console=ttyS0,115200
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200
+
+LABEL live-diag
+  MENU LABEL Memory report (support / benchmark boot)
+  KERNEL /live/vmlinuz
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
 
 EOF
+
+    # Testing hooks, off by default so the release menu is exactly as shipped:
+    #   MENU_TIMEOUT=100      longer menu (lets a test send key presses)
+    #   BOOT_EXTRA="..."      extra kernel args on the default entry
+    sed -i "s|^TIMEOUT 30|TIMEOUT ${MENU_TIMEOUT:-30}|" "$ISODIR/isolinux/isolinux.cfg"
+    if [ -n "${BOOT_EXTRA:-}" ]; then
+        # A test boot wants the messages, so quiet goes away entirely.
+        sed -i "s|quiet splash|${BOOT_EXTRA}|" "$ISODIR/isolinux/isolinux.cfg"
+    fi
 
     # UEFI: a self-contained grub image, so no second filesystem is needed.
     GRUB_MOD="$TOOLBOX/usr/lib/grub/x86_64-efi"
@@ -240,12 +258,16 @@ EOF
         cat > "$WORK/grub-efi.cfg" <<'EOF'
 set timeout=3
 set default=0
-menuentry "Start Refurbished Linux" {
-    linux /live/vmlinuz boot=live components console=ttyS0,115200 quiet splash
+menuentry "Start Refurbished Linux${REFURB_GRUB_EXTRA:-}" {
+    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 ${BOOT_EXTRA:-quiet splash}
     initrd /live/initrd.img
 }
 menuentry "Start Refurbished Linux (verbose boot)" {
-    linux /live/vmlinuz boot=live components
+    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200
+    initrd /live/initrd.img
+}
+menuentry "Memory report (support / benchmark boot)" {
+    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
     initrd /live/initrd.img
 }
 EOF

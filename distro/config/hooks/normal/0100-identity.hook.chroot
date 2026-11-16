@@ -3,10 +3,10 @@
 set -e
 
 cat > /usr/lib/os-release <<'OSR'
-PRETTY_NAME="Refurbished Linux 0.2 (Focus)"
+PRETTY_NAME="Refurbished Linux 0.3.0 (First Desktop)"
 NAME="Refurbished Linux"
-VERSION_ID="0.2"
-VERSION="0.2 (Focus)"
+VERSION_ID="0.3"
+VERSION="0.3.0 (First Desktop)"
 VERSION_CODENAME=focus
 ID=refurbished
 ID_LIKE=debian
@@ -19,15 +19,15 @@ OSR
 ln -sf ../usr/lib/os-release /etc/os-release
 
 cat > /etc/issue <<'ISSUE'
-Refurbished Linux 0.2 (Focus)  \n  \l
+Refurbished Linux 0.3.0 (First Desktop)  \n  \l
 
 ISSUE
 
 cat > /etc/lsb-release <<'LSB'
 DISTRIB_ID=Refurbished
-DISTRIB_RELEASE=0.2
+DISTRIB_RELEASE=0.3
 DISTRIB_CODENAME=focus
-DISTRIB_DESCRIPTION="Refurbished Linux 0.2 (Focus)"
+DISTRIB_DESCRIPTION="Refurbished Linux 0.3.0 (First Desktop)"
 LSB
 
 echo "refurbished-pc" > /etc/hostname

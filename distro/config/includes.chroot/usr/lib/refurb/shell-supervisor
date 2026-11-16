@@ -1,0 +1,26 @@
+#!/bin/sh
+# Keep the desktop shell alive and remember why it died.
+#
+# The shell owns the bar and every window. If it dies the session survives but
+# the interface does not, so it is restarted instead of leaving a blank screen.
+# A clean exit (status 0) means the shell was asked to quit at end of session.
+set -u
+state="${XDG_STATE_HOME:-$HOME/.local/state}/refurb"
+mkdir -p "$state" 2>/dev/null || state=/tmp
+log="$state/session.log"
+printf '%s desktop session starting (display %s)\n' \
+    "$(date -Is)" "${WAYLAND_DISPLAY:-unset}" >> "$log" 2>/dev/null || true
+
+while :; do
+    "$@" >> "$log" 2>&1
+    status=$?
+    if [ "$status" -eq 0 ]; then
+        printf '%s shell exited cleanly, session ending\n' "$(date -Is)" >> "$log" 2>/dev/null || true
+        break
+    fi
+    printf '%s shell exited with %s, restarting in 2s\n' "$(date -Is)" "$status" >> "$log" 2>/dev/null || true
+    if [ -f "$log" ] && [ "$(wc -l < "$log" 2>/dev/null || echo 0)" -gt 400 ]; then
+        tail -n 200 "$log" > "$log.tmp" 2>/dev/null && mv "$log.tmp" "$log" 2>/dev/null
+    fi
+    sleep 2
+done

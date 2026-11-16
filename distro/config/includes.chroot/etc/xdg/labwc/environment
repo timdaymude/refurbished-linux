@@ -7,3 +7,9 @@ GDK_BACKEND=wayland,x11
 XCURSOR_SIZE=24
 GTK_THEME=Adwaita:dark
 QT_STYLE_OVERRIDE=Adwaita-Dark
+
+# seatd, not logind: the session is not a logind graphical session.
+LIBSEAT_BACKEND=seatd
+
+# Software renderer fallback for machines without a usable GPU.
+WLR_RENDERER_ALLOW_SOFTWARE=1

@@ -235,6 +235,8 @@ pub fn run() -> Result<(), String> {
     }
     let _ = ftl;
 
+    // Wallpaper first, then the bar: the desktop must be below everything.
+    session.open_layer(Surface::Desktop);
     session.open_layer(Surface::Bar);
     session.loop_forever(&mut queue)
 }
@@ -243,8 +245,11 @@ impl Session {
     // -- seat ------------------------------------------------------------
 
     fn attach_seat(&mut self, seat: wl_seat::WlSeat) {
-        seat.get_keyboard(&self.qh, ());
-        seat.get_pointer(&self.qh, ());
+        // Input objects are created from the seat's Capabilities event, never
+        // here: calling get_keyboard() on a seat that has never advertised a
+        // keyboard is a protocol error, and a protocol error tears the whole
+        // shell down. The compositor always sends capabilities right after the
+        // bind, so nothing is missed by leaving it to the event.
         self.seat = Some(seat);
     }
 
@@ -263,6 +268,8 @@ impl Session {
         };
         let wl = self.compositor.create_surface(&self.qh, id);
         let layer = match id {
+            // The wallpaper sits below every window and never takes input.
+            Surface::Desktop => zwlr_layer_shell_v1::Layer::Background,
             Surface::Bar => zwlr_layer_shell_v1::Layer::Top,
             _ => zwlr_layer_shell_v1::Layer::Overlay,
         };
@@ -277,6 +284,26 @@ impl Session {
         let mut width = 0u32;
         let mut height = BAR_HEIGHT;
         match id {
+            Surface::Desktop => {
+                width = 0;
+                height = 0;
+                // Anchor to all four edges with a zero size: the compositor
+                // then tells us the output size in its configure event, which
+                // is also how a resolution change reaches the wallpaper.
+                surface.set_anchor(
+                    zwlr_layer_surface_v1::Anchor::Top
+                        | zwlr_layer_surface_v1::Anchor::Bottom
+                        | zwlr_layer_surface_v1::Anchor::Left
+                        | zwlr_layer_surface_v1::Anchor::Right,
+                );
+                surface.set_size(0, 0);
+                // -1: the wallpaper ignores the bar's exclusive zone and covers
+                // the whole output behind it.
+                surface.set_exclusive_zone(-1);
+                surface.set_keyboard_interactivity(
+                    zwlr_layer_surface_v1::KeyboardInteractivity::None,
+                );
+            }
             Surface::Bar => {
                 surface.set_anchor(
                     zwlr_layer_surface_v1::Anchor::Top
@@ -1472,11 +1499,28 @@ impl Dispatch<wl_seat::WlSeat, ()> for Session {
             let WEnum::Value(capabilities) = capabilities else {
                 return;
             };
-            if capabilities.contains(wl_seat::Capability::Keyboard) && session.keyboard.is_none() {
-                session.keyboard = Some(seat.get_keyboard(qh, ()));
+            // Create input objects only for advertised capabilities, and
+            // release them when a capability disappears (an undocked laptop
+            // loses its keyboard; a touch-only device never has one). Creating
+            // them eagerly is a protocol error, so is keeping them alive after
+            // the capability is gone.
+            if capabilities.contains(wl_seat::Capability::Keyboard) {
+                if session.keyboard.is_none() {
+                    session.keyboard = Some(seat.get_keyboard(qh, ()));
+                }
+            } else if let Some(keyboard) = session.keyboard.take() {
+                if keyboard.version() >= 3 {
+                    keyboard.release();
+                }
             }
-            if capabilities.contains(wl_seat::Capability::Pointer) && session.pointer.is_none() {
-                session.pointer = Some(seat.get_pointer(qh, ()));
+            if capabilities.contains(wl_seat::Capability::Pointer) {
+                if session.pointer.is_none() {
+                    session.pointer = Some(seat.get_pointer(qh, ()));
+                }
+            } else if let Some(pointer) = session.pointer.take() {
+                if pointer.version() >= 3 {
+                    pointer.release();
+                }
             }
         }
     }

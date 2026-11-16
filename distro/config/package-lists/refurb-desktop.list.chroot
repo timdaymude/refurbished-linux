@@ -2,6 +2,10 @@
 # labwc is the compositor; refurb-shell (shipped as a .deb in
 # config/packages.chroot) draws the bar, launcher and windows.
 labwc
+# Seat management without a display manager or a logind graphical session:
+# libseat's seatd backend hands the compositor DRM and VT access directly.
+# About 1 MB resident, and it replaces a display manager entirely.
+seatd
 xwayland
 foot
 pcmanfm

@@ -3,22 +3,22 @@ Description=Refurbished Linux desktop session
 Documentation=https://refurbishedlinux.org/
 After=systemd-user-sessions.service systemd-logind.service network.target
 Conflicts=getty@tty1.service
+# Never give up restarting: a dead compositor must not leave a black screen.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# The first human account created by the installer is always uid 1000; the live
-# session uses the same. This is the "turn it on and it is ready" model: there
-# is no display manager to load, and locking the screen is explicit.
-User=1000
-PAMName=login
-TTYPath=/dev/tty1
-StandardInput=tty
+# The account is resolved at start time by the launcher: hard-coding a uid here
+# stopped the session from ever spawning on the live image (systemd status
+# 217/USER), which left a black screen with no explanation.
+ExecStart=/usr/lib/refurb/session-start
 StandardOutput=journal
 StandardError=journal
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_SESSION_CLASS=user
-ExecStart=/usr/bin/refurb-session
-Restart=no
+# A dead compositor must not leave a black screen.
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=graphical.target

@@ -1,6 +1,6 @@
 #!/bin/sh
 # The Refurbished Linux desktop session: environment, first-run welcome, labwc.
-set -eu
+set -u
 
 export XDG_CURRENT_DESKTOP=refurb
 export XDG_SESSION_DESKTOP=refurb
@@ -11,6 +11,13 @@ export MOZ_ENABLE_WAYLAND=1
 export BROWSER=brave-browser
 export ELECTRON_OZONE_PLATFORM_HINT=auto
 # Dark is the default everywhere, including GTK apps and Chromium's UI.
+# No display manager and no logind graphical session here, so the
+# compositor takes its seat from seatd rather than logind.
+# Machines with no usable GPU (virtual machines, very old integrated graphics)
+# must still get a desktop: let wlroots fall back to a software renderer
+# instead of refusing to start. Hardware GL is used whenever it exists.
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+export LIBSEAT_BACKEND=seatd
 export GTK_THEME=Adwaita:dark
 export QT_STYLE_OVERRIDE=Adwaita-Dark
 
@@ -18,9 +25,11 @@ mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Pictures" 2>/dev/null || tru
 command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update >/dev/null 2>&1 || true
 
 # First boot: one page that explains the machine and links to Microsoft 365.
-if [ ! -f "$HOME/.config/refurb/welcomed" ]; then
-    mkdir -p "$HOME/.config/refurb" 2>/dev/null || true
-    : > "$HOME/.config/refurb/welcomed" 2>/dev/null || true
+# Cosmetic only: if the marker cannot be written (read-only home, odd
+# ownership) the desktop still starts.
+welcome_marker="$HOME/.config/refurb/welcomed"
+if [ ! -f "$welcome_marker" ] && mkdir -p "$HOME/.config/refurb" 2>/dev/null \
+        && : > "$welcome_marker" 2>/dev/null; then
     ( sleep 5; exec brave-browser --new-window \
         "file:///usr/share/refurb/welcome/index.html" ) >/dev/null 2>&1 &
 fi

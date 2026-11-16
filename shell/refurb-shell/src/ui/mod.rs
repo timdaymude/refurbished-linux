@@ -22,6 +22,8 @@ pub use widgets::Ctx;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
+    /// Full-output wallpaper layer, drawn once per output-size change.
+    Desktop,
     Bar,
     Launcher,
     Quick,
@@ -353,6 +355,7 @@ impl App {
         let mut st = std::mem::take(&mut self.st);
         st.view = surface;
         match surface {
+            Surface::Desktop => paint_desktop_background(&mut pm),
             Surface::Bar => pm.fill(theme::panel()),
             Surface::Launcher | Surface::Quick => pm.fill(Color::TRANSPARENT),
             Surface::Software | Surface::Settings => pm.fill(theme::card()),
@@ -368,6 +371,8 @@ impl App {
                 hover: st.hover,
             };
             match surface {
+                // The wallpaper has no widgets; it is painted by the fill above.
+                Surface::Desktop => {}
                 Surface::Bar => bar::draw(&mut cx, w as f32, h as f32),
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
@@ -457,16 +462,24 @@ pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
 /// The desktop background: warm paper with a single large brand watermark.
 pub fn desktop_background(w: u32, h: u32) -> Pixmap {
     let mut pm = Pixmap::new(w.max(1), h.max(1)).expect("surface size");
+    paint_desktop_background(&mut pm);
+    pm
+}
+
+/// Paint the wallpaper into an existing pixmap. The live session uses this so
+/// the background layer surface allocates exactly one buffer at output size.
+pub fn paint_desktop_background(pm: &mut Pixmap) {
+    let (w, h) = (pm.width(), pm.height());
     // One diagonal paper gradient plus a soft accent glow: no images, no
     // wallpaper daemon, about a millisecond to draw at any resolution.
     render::fill_gradient(
-        &mut pm,
+        pm,
         render::rect(0.0, 0.0, w as f32, h as f32),
         theme::paper(),
         theme::mix(theme::paper(), theme::accent_soft(), 0.85),
     );
     render::circle(
-        &mut pm,
+        pm,
         w as f32 * 0.78,
         h as f32 * 0.12,
         w.min(h) as f32 * 0.55,
@@ -475,13 +488,12 @@ pub fn desktop_background(w: u32, h: u32) -> Pixmap {
     let mark = (w.min(h) as f32 * 0.22).clamp(60.0, 190.0);
     let area = render::rect(w as f32 - mark - 60.0, h as f32 - mark - 70.0, mark, mark);
     icons::draw(
-        &mut pm,
+        pm,
         icons::Glyph::Brand,
         area,
         theme::mix(theme::paper(), theme::accent(), 0.22),
         1.9,
     );
-    pm
 }
 
 /// Local wall clock without pulling in a date/time crate: `localtime_r` is in

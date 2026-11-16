@@ -2,17 +2,50 @@
 # Make the session start at boot, and make the helpers usable.
 set -e
 
+# Seat management for the compositor (no display manager, no logind session).
+systemctl enable seatd.service >/dev/null 2>&1 || true
+systemctl start seatd.service >/dev/null 2>&1 || true
+for group in _seatd seatd; do
+    getent group "$group" >/dev/null 2>&1 || continue
+    for account in refurb user; do
+        id "$account" >/dev/null 2>&1 && usermod -aG "$group" "$account" || true
+    done
+done
+
 systemctl enable refurb-session.service >/dev/null 2>&1 || true
+# Memory report: enabled but inert unless refurb.measure=1 is on the cmdline.
+systemctl enable refurb-diag.service >/dev/null 2>&1 || true
+# Recovery route: Ctrl+Alt+F2..F6 always gives a text login, even if the
+# graphical session fails. tty1 belongs to the session (Conflicts= there).
+# live-config drops an autologin for a user called "user"; this image has no
+# such account, so every getty failed and restarted in a loop (visible as
+# pam_unix "could not identify user"). The desktop does not need a text
+# autologin, and tty2-6 are recovery consoles with a normal login.
+rm -f /etc/systemd/system/getty@tty*.service.d/autologin.conf 2>/dev/null || true
+rm -f /etc/systemd/system/getty@.service.d/autologin.conf 2>/dev/null || true
+for vt in 2 3 4 5 6; do
+    systemctl enable "getty@tty${vt}.service" >/dev/null 2>&1 || true
+done
 systemctl set-default graphical.target >/dev/null 2>&1 || true
 
 for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
-               /usr/bin/refurb-session; do
+               /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
+               /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
 done
 chmod 0440 /etc/sudoers.d/refurb-helpers
 
-# The live session user gets the same treatment as the installed one.
-if id user >/dev/null 2>&1; then
-    usermod -aG video,netdev,audio user || true
+# The live medium needs a real human account: the desktop session runs as it,
+# and the session launcher looks for the first uid >= 1000. An installed system
+# replaces this with the account the user creates in the installer.
+if ! getent passwd 1000 >/dev/null 2>&1; then
+    useradd -m -u 1000 -s /bin/bash -c "Refurbished Linux" refurb || true
+    passwd -d refurb >/dev/null 2>&1 || true
 fi
+for account in refurb user; do
+    id "$account" >/dev/null 2>&1 || continue
+    for group in video netdev audio input render sudo; do
+        getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$account" || true
+    done
+done
 

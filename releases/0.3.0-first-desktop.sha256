@@ -1,0 +1,17 @@
+Refurbished Linux 0.3.0 "First Desktop" — development ISO (boots to the desktop)
+
+file:   refurbished-linux-0.3.0-amd64.iso
+size:   810549248 bytes (773 MiB)
+sha256: b933349293d72034c86288f4c4a40b3ac086b1ee18fc95307befb4878fe00bff
+firmware: BIOS (isolinux menu.c32) + UEFI (grub efi.img), isohybrid MBR+GPT
+base:   Debian 13 trixie, kernel 6.12.57-amd64
+
+Verified in QEMU (2 cores, 2 GB, software emulation, no KVM):
+  - boots to the graphical desktop with the dark palette
+  - bar, launcher button, status area, clock, Brave + welcome page
+  - serial console login as the passwordless live account "refurb"
+  - idle desktop: 190 MB summed PSS, 230 MB system occupancy,
+    MemAvailable 1572 MB of 1973 MB, zram swap 986 MB
+
+NOT included: the graphical installer. This ISO is live-only.
+See docs/release-0.3.md for the full test report and known problems.

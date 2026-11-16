@@ -1,0 +1,46 @@
+#!/bin/sh
+# Start the desktop as the machine's human account, whatever its uid is.
+#
+# Refurbished Linux 0.2 hard-coded User=1000 in refurb-session.service. On a
+# live system with no uid 1000 systemd refused to spawn the unit at all
+# ("Failed at step USER ... status=217/USER"), so the graphical session never
+# started and the screen stayed on the boot menu. Resolving the account here
+# keeps the session independent of which uid the live medium or the installer
+# happened to pick.
+set -eu
+
+target=""
+for uid in $(awk -F: '$3 >= 1000 && $3 < 60000 {print $3}' /etc/passwd | sort -n); do
+    entry=$(getent passwd "$uid" || true)
+    [ -n "$entry" ] || continue
+    name=$(printf '%s' "$entry" | cut -d: -f1)
+    shell=$(printf '%s' "$entry" | cut -d: -f7)
+    case "$shell" in */nologin|*/false|"") continue ;; esac
+    target=$name
+    break
+done
+
+if [ -z "$target" ]; then
+    echo "refurb-session: no desktop account with uid >= 1000 exists" >&2
+    exit 1
+fi
+
+uid=$(id -u "$target")
+gid=$(id -g "$target")
+home=$(getent passwd "$target" | cut -d: -f6)
+# The image is built without root, so the home directory can end up owned by
+# whoever ran the build. Repair it here: this runs as root, before the session.
+if [ -n "$home" ]; then
+    [ -d "$home" ] || mkdir -p "$home" 2>/dev/null || true
+    chown "$uid:$gid" "$home" 2>/dev/null || true
+    chmod 0700 "$home" 2>/dev/null || true
+fi
+export XDG_RUNTIME_DIR=/run/user/$uid
+# pam_systemd normally makes this; a bare unit start does not.
+install -d -m 0700 -o "$target" -g "$gid" "$XDG_RUNTIME_DIR"
+
+echo "refurb-session: starting as $target (uid $uid, home $home)"
+exec runuser -u "$target" -- env \
+    HOME="$home" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+    USER="$target" LOGNAME="$target" \
+    /usr/bin/refurb-session

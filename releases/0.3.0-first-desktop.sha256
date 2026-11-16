@@ -15,3 +15,7 @@ Verified in QEMU (2 cores, 2 GB, software emulation, no KVM):
 
 NOT included: the graphical installer. This ISO is live-only.
 See docs/release-0.3.md for the full test report and known problems.
+
+published: https://github.com/timdaymude/refurbished-linux/releases/tag/v0.3.0
+asset:     refurbished-linux-0.3.0-amd64.iso (810,549,248 bytes, state: uploaded)
+verified:  downloaded from the release and re-hashed — identical to the local build

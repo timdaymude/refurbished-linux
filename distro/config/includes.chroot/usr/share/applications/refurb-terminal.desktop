@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=Command line
+Exec=foot
+Icon=application-x-executable
+Terminal=false
+Categories=System;TerminalEmulator;
+X-Refurb-Pin=6
+X-Refurb-Group=system

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Update helpers for the Settings window. Refreshing and installing are
+# separate on purpose: the user decides when either happens.
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C
+
+case "${1:-}" in
+    --refresh) exec apt-get --quiet update ;;
+    --install) exec apt-get -y -o Dpkg::Options::=--force-confdef \
+                    -o Dpkg::Options::=--force-confold --quiet upgrade ;;
+    *) echo "usage: refurb-update --refresh|--install" >&2; exit 2 ;;
+esac

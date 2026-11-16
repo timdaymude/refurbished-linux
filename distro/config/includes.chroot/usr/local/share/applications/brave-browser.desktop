@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Brave
+GenericName=Web Browser
+Comment=Fast, private web browser
+Exec=brave-browser %U
+Icon=brave-browser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true
+X-Refurb-Pin=1
+X-Refurb-Group=web

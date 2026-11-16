@@ -1,0 +1,48 @@
+#!/bin/sh
+# Remove the constant background work that makes a 2 GB machine feel slow.
+# Nothing here is needed for a machine that updates when the user asks.
+set -e
+
+mask() {
+    for unit in "$@"; do
+        systemctl mask "$unit" >/dev/null 2>&1 || true
+    done
+}
+
+# Update daemons, catalogue refreshers, indexers and search daemons.
+mask \
+    apt-daily-upgrade.timer \
+    apt-daily-upgrade.service \
+    unattended-upgrades.service \
+    packagekit.service \
+    packagekit-offline-update.service \
+    fwupd.service \
+    fwupd-refresh.timer \
+    fwupd-refresh.service \
+    avahi-daemon.service \
+    avahi-daemon.socket \
+    ModemManager.service \
+    cups.service \
+    cups-browsed.service \
+    man-db.timer \
+    motd-news.timer \
+    motd-news.service \
+    e2scrub_all.timer \
+    snapd.service \
+    tracker-miner-fs.service \
+    tracker-miner-rss.service \
+    evolution-addressbook-factory.service \
+    evolution-calendar-factory.service \
+    evolution-source-registry.service
+
+# The daily *metadata* refresh is kept: it is a short-lived process once a day,
+# it never installs anything, and it is what makes "check for updates" instant.
+systemctl enable apt-daily.timer >/dev/null 2>&1 || true
+
+# No automatic application restarts and no memory-hungry coredumps.
+mkdir -p /etc/systemd/coredump.conf.d
+cat > /etc/systemd/coredump.conf.d/99-refurb.conf <<'CONF'
+[Coredump]
+Storage=none
+ProcessSizeMax=0
+CONF

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Refurbished Linux
+Comment=Focus desktop
+Exec=/usr/bin/refurb-session
+Type=Application
+DesktopNames=refurb

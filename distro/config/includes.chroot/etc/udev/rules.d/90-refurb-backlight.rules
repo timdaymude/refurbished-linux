@@ -1,0 +1,3 @@
+# Let the desktop session change the screen brightness without a helper daemon.
+SUBSYSTEM=="backlight", ACTION=="add|change", RUN+="/bin/chmod 0666 /sys/class/backlight/%k/brightness"
+SUBSYSTEM=="leds", ACTION=="add|change", KERNEL=="*kbd_backlight", RUN+="/bin/chmod 0666 /sys/class/leds/%k/brightness"

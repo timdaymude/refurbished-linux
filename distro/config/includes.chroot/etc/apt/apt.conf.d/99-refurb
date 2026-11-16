@@ -1,0 +1,16 @@
+// Refurbished Linux package policy.
+// Recommendations and suggestions are not installed: every extra package is
+// memory, disk and update time on a machine that has none to spare.
+APT::Install-Recommends "false";
+APT::Install-Suggests "false";
+
+// Refresh the package lists once a day in a short-lived process. Nothing is
+// downloaded and nothing is installed automatically: the user decides.
+APT::Periodic::Enable "1";
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "0";
+APT::Periodic::Download-Upgradeable-Packages "0";
+APT::Periodic::AutocleanInterval "0";
+
+// No translation indexes for a language the user may not use.
+Acquire::Languages "none";

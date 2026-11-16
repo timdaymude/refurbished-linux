@@ -1,0 +1,5 @@
+# Cockpit: socket activated, bound to 127.0.0.1 only.
+cockpit
+cockpit-ws
+cockpit-bridge
+cockpit-system

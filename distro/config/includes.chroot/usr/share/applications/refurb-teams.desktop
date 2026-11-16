@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Teams
+Comment=Meetings and chat
+Exec=brave-browser --new-window https://teams.microsoft.com
+Icon=application-x-executable
+Terminal=false
+Categories=Network;
+X-Refurb-Pin=10
+X-Refurb-Group=web
+X-Refurb-Web=https://teams.microsoft.com

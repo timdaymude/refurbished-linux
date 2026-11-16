@@ -1,0 +1,14 @@
+{
+  "BackgroundModeEnabled": false,
+  "HardwareAccelerationModeEnabled": true,
+  "MetricsReportingEnabled": false,
+  "UrlKeyedAnonymizedDataCollectionEnabled": false,
+  "DefaultBrowserSettingEnabled": true,
+  "BraveRewardsDisabled": true,
+  "BraveWalletDisabled": true,
+  "PromotionsEnabled": false,
+  "TorDisabled": true,
+  "WebRtcEventLogCollectionAllowed": false,
+  "BraveDarkMode": 2,
+  "ShowHomeButton": false
+}

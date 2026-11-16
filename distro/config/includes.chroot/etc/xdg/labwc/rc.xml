@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!-- Refurbished Linux: labwc configuration.
+     Window management is deliberately conventional (stacked windows, Super
+     for the launcher, Alt-Tab to switch) so that a Windows user is at home
+     immediately. Animations and shadows are off. -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <core>
+    <gap>0</gap>
+    <adaptiveSync>no</adaptiveSync>
+    <allowSnapping>yes</allowSnapping>
+    <reuseOutputMode>yes</reuseOutputMode>
+    <primarySelection>true</primarySelection>
+  </core>
+
+  <placement>
+    <policy>center</policy>
+  </placement>
+
+  <theme>
+    <name>Clearlooks</name>
+    <cornerRadius>8</cornerRadius>
+    <font place="ActiveWindow">
+      <name>Inter</name><size>10</size><weight>normal</weight>
+    </font>
+    <font place="InactiveWindow">
+      <name>Inter</name><size>10</size><weight>normal</weight>
+    </font>
+    <font place="MenuItem">
+      <name>Inter</name><size>10</size><weight>normal</weight>
+    </font>
+    <font place="OnScreenDisplay">
+      <name>Inter</name><size>11</size><weight>bold</weight>
+    </font>
+  </theme>
+
+  <windowRules>
+    <!-- The shell draws its own headers for these two windows. -->
+    <windowRule identifier="refurb-software" serverDecoration="no" />
+    <windowRule identifier="refurb-settings" serverDecoration="no" />
+  </windowRules>
+
+  <keyboard>
+    <default />
+    <keybind key="W-space">
+      <action name="Execute"><command>refurb-shell --send launcher</command></action>
+    </keybind>
+    <keybind key="W-Return">
+      <action name="Execute"><command>foot</command></action>
+    </keybind>
+    <keybind key="W-e">
+      <action name="Execute"><command>pcmanfm</command></action>
+    </keybind>
+    <keybind key="W-s">
+      <action name="Execute"><command>refurb-shell --send software</command></action>
+    </keybind>
+    <keybind key="W-comma">
+      <action name="Execute"><command>refurb-shell --send settings</command></action>
+    </keybind>
+    <keybind key="W-l">
+      <action name="Execute"><command>refurb-shell --send lock</command></action>
+    </keybind>
+    <keybind key="W-q">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-f">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="A-Tab">
+      <action name="NextWindow" />
+    </keybind>
+    <keybind key="A-F4">
+      <action name="Close" />
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute"><command>sh -c 'mkdir -p "$HOME/Pictures" &amp;&amp; grim "$HOME/Pictures/screenshot-$(date +%F-%H%M%S).png"'</command></action>
+    </keybind>
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute"><command>wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+</command></action>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute"><command>wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-</command></action>
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute"><command>wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle</command></action>
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute"><command>brightnessctl -q set 10%+</command></action>
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute"><command>brightnessctl -q set 10%-</command></action>
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <default />
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press">
+        <action name="Focus" />
+        <action name="Raise" />
+      </mousebind>
+    </context>
+  </mouse>
+</openbox_config>

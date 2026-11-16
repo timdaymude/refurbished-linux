@@ -1,0 +1,43 @@
+== ubuntu: qemu-system-x86, seabios
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/q/qemu/qemu-system-x86_8.2.2+ds-0ubuntu1_amd64.deb
+  extract qemu-system-x86 1:8.2.2+ds-0ubuntu1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/s/seabios/seabios_1.16.3-2_all.deb
+  extract seabios 1.16.3-2
+== round 1: 9 missing libraries
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/Contents-amd64.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/liba/libaio/libaio1t64_0.3.113-6build1_amd64.deb
+  extract libaio1t64 0.3.113-6build1
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  skip http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz: IncompleteRead(8391139 bytes read, 10924505 more expected)
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/d/device-tree-compiler/libfdt1_1.7.0-2build1_amd64.deb
+  extract libfdt1 1.7.0-2build1
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libjpeg-turbo8 2.1.5-2ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/n/numactl/libnuma1_2.0.18-1build1_amd64.deb
+  extract libnuma1 2.0.18-1build1
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libpixman-1-0 0.42.2-1build1
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libpmem1 1.13.1-1.1ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/r/rdma-core/librdmacm1t64_50.0-2build2_amd64.deb
+  extract librdmacm1t64 50.0-2build2
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libslirp0 4.7.0-1ubuntu3
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract liburing2 2.5-1build1
+== libraries resolved after 1 round(s)
+== 11 packages in /workspace/chats/f9ad42685f3caa2547dfd38e/.toolbox

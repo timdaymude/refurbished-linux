@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Display, sound, updates and power
+Exec=refurb-shell --send settings
+Icon=application-x-executable
+Terminal=false
+Categories=System;Settings;
+X-Refurb-Pin=4
+X-Refurb-Group=system

@@ -1,0 +1,9 @@
+# Firmware for the wireless and graphics hardware found in refurbished
+# machines. These are the single biggest reliability win on old laptops.
+firmware-linux
+firmware-misc-nonfree
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-brcm80211
+firmware-mediatek

@@ -1,0 +1,57 @@
+== ubuntu: vgabios, libpixman-1-0, libgnutls30t64, libgcrypt20, libslirp0, libusb-1.0-0t64, libfuse3-3, liburing2, libpmem1, libzstd1, libjpeg-turbo8, libepoxy0, libgbm1, libdrm2, libx11-6, libsdl2-2.0-0t64, libgtk-3-0t64, libspice-server1, libvirglrenderer1, libusbredirparser1t64, libcacard0, libcapstone4, libpmemobj1
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/pool/universe/v/vgabios/vgabios_0.8a+ds-2_all.deb
+  extract vgabios 0.8a+ds-2
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/p/pixman/libpixman-1-0_0.42.2-1build1_amd64.deb
+  extract libpixman-1-0 0.42.2-1build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/g/gnutls28/libgnutls30t64_3.8.3-1.1ubuntu3_amd64.deb
+  extract libgnutls30t64 3.8.3-1.1ubuntu3
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libg/libgcrypt20/libgcrypt20_1.10.3-2build1_amd64.deb
+  extract libgcrypt20 1.10.3-2build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libs/libslirp/libslirp0_4.7.0-1ubuntu3_amd64.deb
+  extract libslirp0 4.7.0-1ubuntu3
+  MISSING package libusb-1.0-0t64
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/f/fuse3/libfuse3-3_3.14.0-5build1_amd64.deb
+  extract libfuse3-3 3.14.0-5build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libu/liburing/liburing2_2.5-1build1_amd64.deb
+  extract liburing2 2.5-1build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/p/pmdk/libpmem1_1.13.1-1.1ubuntu2_amd64.deb
+  extract libpmem1 1.13.1-1.1ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libz/libzstd/libzstd1_1.5.5+dfsg2-2build1_amd64.deb
+  extract libzstd1 1.5.5+dfsg2-2build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libj/libjpeg-turbo/libjpeg-turbo8_2.1.5-2ubuntu2_amd64.deb
+  extract libjpeg-turbo8 2.1.5-2ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libe/libepoxy/libepoxy0_1.5.10-1build1_amd64.deb
+  extract libepoxy0 1.5.10-1build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libgbm1_24.0.5-1ubuntu1_amd64.deb
+  extract libgbm1 24.0.5-1ubuntu1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.120-2build1_amd64.deb
+  extract libdrm2 2.4.120-2build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libx/libx11/libx11-6_1.8.7-1build1_amd64.deb
+  extract libx11-6 2:1.8.7-1build1
+  MISSING package libsdl2-2.0-0t64
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/g/gtk+3.0/libgtk-3-0t64_3.24.41-4ubuntu1_amd64.deb
+  extract libgtk-3-0t64 3.24.41-4ubuntu1
+  extract libspice-server1 0.15.1-1build2
+  extract libvirglrenderer1 1.0.0-1ubuntu2
+  extract libusbredirparser1t64 0.13.0-2.1build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/libc/libcacard/libcacard0_2.8.0-3build4_amd64.deb
+  extract libcacard0 1:2.8.0-3build4
+  fetch http://archive.ubuntu.com/ubuntu/pool/universe/c/capstone/libcapstone4_4.0.2-5.1build1_amd64.deb
+  extract libcapstone4 4.0.2-5.1build1
+  fetch http://archive.ubuntu.com/ubuntu/pool/main/p/pmdk/libpmemobj1_1.13.1-1.1ubuntu2_amd64.deb
+  extract libpmemobj1 1.13.1-1.1ubuntu2
+== round 1: 3 missing libraries
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/Contents-amd64.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libdaxctl1 77-2ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract libndctl6 77-2ubuntu2
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract librdmacm1t64 50.0-2build2
+== libraries resolved after 1 round(s)
+== 24 packages in /workspace/chats/f9ad42685f3caa2547dfd38e/.toolbox

@@ -1,0 +1,33 @@
+#!/bin/sh
+# Give the system its own identity.
+set -e
+
+cat > /usr/lib/os-release <<'OSR'
+PRETTY_NAME="Refurbished Linux 0.2 (Focus)"
+NAME="Refurbished Linux"
+VERSION_ID="0.2"
+VERSION="0.2 (Focus)"
+VERSION_CODENAME=focus
+ID=refurbished
+ID_LIKE=debian
+HOME_URL="https://refurbishedlinux.org/"
+DOCUMENTATION_URL="https://refurbishedlinux.org/docs"
+SUPPORT_URL="https://refurbishedlinux.org/community"
+BUG_REPORT_URL="https://refurbishedlinux.org/issues"
+DEBIAN_CODENAME=trixie
+OSR
+ln -sf ../usr/lib/os-release /etc/os-release
+
+cat > /etc/issue <<'ISSUE'
+Refurbished Linux 0.2 (Focus)  \n  \l
+
+ISSUE
+
+cat > /etc/lsb-release <<'LSB'
+DISTRIB_ID=Refurbished
+DISTRIB_RELEASE=0.2
+DISTRIB_CODENAME=focus
+DISTRIB_DESCRIPTION="Refurbished Linux 0.2 (Focus)"
+LSB
+
+echo "refurbished-pc" > /etc/hostname

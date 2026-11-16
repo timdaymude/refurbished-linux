@@ -1,0 +1,32 @@
+# Refurbished Linux - core system.
+# Only what the machine needs to boot, connect and stay healthy.
+linux-image-amd64
+live-boot
+live-config
+live-config-systemd
+systemd
+systemd-sysv
+systemd-zram-generator
+udev
+dbus
+sudo
+network-manager
+bluez
+rfkill
+pipewire
+pipewire-pulse
+wireplumber
+libspa-0.2-bluetooth
+wireless-regdb
+ca-certificates
+curl
+apt
+dpkg
+locales
+tzdata
+console-setup
+keyboard-configuration
+nano
+less
+btop
+initramfs-tools

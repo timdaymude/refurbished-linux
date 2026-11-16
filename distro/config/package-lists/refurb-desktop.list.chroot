@@ -1,0 +1,26 @@
+# Refurbished Linux - the desktop itself.
+# labwc is the compositor; refurb-shell (shipped as a .deb in
+# config/packages.chroot) draws the bar, launcher and windows.
+labwc
+xwayland
+foot
+pcmanfm
+gvfs
+xdg-utils
+swaylock
+wlr-randr
+grim
+brightnessctl
+xdg-desktop-portal-wlr
+desktop-file-utils
+shared-mime-info
+xdg-user-dirs
+udisks2
+upower
+fonts-inter
+fonts-dejavu-core
+libgl1-mesa-dri
+mesa-va-drivers
+intel-media-va-driver
+gnome-themes-extra
+adwaita-icon-theme

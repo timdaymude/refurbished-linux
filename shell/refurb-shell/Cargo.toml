@@ -1,0 +1,39 @@
+[package]
+name = "refurb-shell"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Refurbished Linux desktop shell: bar, launcher, quick settings and system windows"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+# Rendering: pure Rust, CPU rasterisation (no GPU, no C toolchain needed).
+tiny-skia = "0.11"
+fontdue = "0.9"
+
+# Session (Wayland) support. Optional so the UI can be built, tested and
+# rendered headlessly on machines without Wayland libraries.
+wayland-client = { version = "0.31", optional = true }
+wayland-protocols = { version = "0.31", features = ["client", "staging"], optional = true }
+wayland-protocols-wlr = { version = "0.3", features = ["client"], optional = true }
+libloading = { version = "0.8", optional = true }
+
+[features]
+default = ["session"]
+session = [
+    "dep:wayland-client",
+    "dep:wayland-protocols",
+    "dep:wayland-protocols-wlr",
+    "dep:libloading",
+]
+
+[[bin]]
+name = "refurb-shell"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

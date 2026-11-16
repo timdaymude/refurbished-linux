@@ -1,0 +1,18 @@
+#!/bin/sh
+# Make the session start at boot, and make the helpers usable.
+set -e
+
+systemctl enable refurb-session.service >/dev/null 2>&1 || true
+systemctl set-default graphical.target >/dev/null 2>&1 || true
+
+for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
+               /usr/bin/refurb-session; do
+    [ -f "$program" ] && chmod 0755 "$program"
+done
+chmod 0440 /etc/sudoers.d/refurb-helpers
+
+# The live session user gets the same treatment as the installed one.
+if id user >/dev/null 2>&1; then
+    usermod -aG video,netdev,audio user || true
+fi
+

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Welcome
+Comment=A short introduction to this computer
+Exec=brave-browser --new-window file:///usr/share/refurb/welcome/index.html
+Icon=application-x-executable
+Terminal=false
+Categories=System;
+X-Refurb-Group=system

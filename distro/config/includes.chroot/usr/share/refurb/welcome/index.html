@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to Refurbished Linux</title>
+<style>
+  :root {
+    --paper: #f4f1e9;
+    --card: #fffdf8;
+    --ink: #1b1a18;
+    --soft: #5e5952;
+    --faint: #938d84;
+    --line: #e2dbcd;
+    --accent: #0e7a69;
+    --accent-soft: #daece8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(135deg, #f4f1e9 0%, #eef6f2 100%);
+    color: var(--ink);
+    font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif;
+    padding: 48px 24px 64px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  .mark {
+    width: 46px; height: 46px; border-radius: 12px;
+    background: var(--accent); display: grid; place-items: center;
+    color: #fff; font-weight: 600; font-size: 20px;
+  }
+  h1 { font-size: 30px; margin: 18px 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--soft); margin: 0 0 30px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 18px 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 6px; }
+  .card p { margin: 0; color: var(--soft); font-size: 13.5px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .links a {
+    display: inline-block; padding: 7px 12px; border-radius: 8px;
+    background: #eef7f4; border: 1px solid #d8ece6; font-size: 13px; font-weight: 500;
+  }
+  .note {
+    margin-top: 26px; padding: 16px 18px; border-radius: 12px;
+    background: #fdf6ef; border: 1px solid #f0e3d4; color: var(--soft); font-size: 13.5px;
+  }
+  code { background: #f1eee6; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  footer { margin-top: 34px; color: var(--faint); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">R</div>
+  <h1>This computer is ready.</h1>
+  <p class="sub">Refurbished Linux 1.0 “Focus” — a small, quick system built for machines like this one.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1. Get online</h2>
+      <p>Click the gear at the right of the bar, then Wi-Fi, and pick your network. The machine reconnects to it by itself from now on.</p>
+    </div>
+    <div class="card">
+      <h2>2. Open your things</h2>
+      <p>Brave is the browser and it is already set up. Your Microsoft 365, Outlook, OneDrive and Teams shortcuts are in the launcher.</p>
+    </div>
+    <div class="card">
+      <h2>3. Add software when you need it</h2>
+      <p>Software searches Debian’s catalogue only when you open it. Nothing is installed or updated behind your back.</p>
+    </div>
+    <div class="card">
+      <h2>4. Find anything</h2>
+      <p>Press <code>Super + Space</code> to open the launcher, <code>Alt + Tab</code> to switch windows, and <code>Super + L</code> to lock the screen.</p>
+    </div>
+  </div>
+
+  <div class="links">
+    <a href="https://www.office.com">Microsoft 365</a>
+    <a href="https://outlook.office.com">Outlook</a>
+    <a href="https://onedrive.live.com">OneDrive</a>
+    <a href="https://teams.microsoft.com">Teams</a>
+    <a href="http://127.0.0.1:9090">Cockpit</a>
+  </div>
+
+  <div class="note">
+    <strong>What is different here.</strong> There is no software constantly running in the background: no update checker,
+    no indexer, no cloud sync, no telemetry. That is why this computer feels quick again.
+    Windows programs do not run natively; Microsoft 365, Outlook, OneDrive and Teams all work in the browser.
+  </div>
+
+  <footer>Refurbished Linux · built on Debian 13 (trixie) · free software under the GPL-3.0</footer>
+</div>
+</body>
+</html>

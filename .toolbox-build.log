@@ -1,0 +1,57 @@
+== ubuntu: xorriso, squashfs-tools, mtools, dosfstools, isolinux, syslinux-common, syslinux-utils, grub-common, grub-pc-bin, grub-efi-amd64-bin
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.gz
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+  extract xorriso 1:1.5.6-1.1ubuntu3
+  extract squashfs-tools 1:4.6.1-1build1
+  extract mtools 4.0.43-1build1
+  extract dosfstools 4.2-1.1build1
+  extract isolinux 3:6.04~git20190206.bf6db5b4+dfsg1-3ubuntu3
+  extract syslinux-common 3:6.04~git20190206.bf6db5b4+dfsg1-3ubuntu3
+  extract syslinux-utils 3:6.04~git20190206.bf6db5b4+dfsg1-3ubuntu3
+  extract grub-common 2.12-1ubuntu7
+  extract grub-pc-bin 2.12-1ubuntu7
+  extract grub-efi-amd64-bin 2.12-1ubuntu7
+== debian: debootstrap
+  fetch http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz
+  fetch http://deb.debian.org/debian/dists/trixie/contrib/binary-amd64/Packages.gz
+  fetch http://deb.debian.org/debian/dists/trixie/non-free/binary-amd64/Packages.gz
+  fetch http://deb.debian.org/debian/dists/trixie/non-free-firmware/binary-amd64/Packages.gz
+  extract debootstrap 1.0.141
+== round 1: 5 missing libraries
+  fetch http://archive.ubuntu.com/ubuntu/dists/noble/Contents-amd64.gz
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== round 2: 5 missing libraries
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== round 3: 5 missing libraries
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== round 4: 5 missing libraries
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== round 5: 5 missing libraries
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== round 6: 5 missing libraries
+  UNRESOLVED libefiboot.so.1
+  UNRESOLVED libefivar.so.1
+  UNRESOLVED libfreetype.so.6
+  UNRESOLVED libisoburn.so.1
+  UNRESOLVED liblzo2.so.2
+== 11 packages in /workspace/chats/f9ad42685f3caa2547dfd38e/.toolbox

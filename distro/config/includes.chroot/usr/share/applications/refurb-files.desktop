@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Comment=Your documents, pictures and USB drives
+Exec=pcmanfm
+Icon=application-x-executable
+Terminal=false
+Categories=System;FileManager;
+X-Refurb-Pin=2
+X-Refurb-Group=system

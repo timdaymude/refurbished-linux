@@ -1,0 +1,5 @@
+#!/bin/sh
+# Cockpit is installed and socket activated: it costs nothing until opened.
+set -e
+systemctl enable cockpit.socket >/dev/null 2>&1 || true
+systemctl disable cockpit.service >/dev/null 2>&1 || true

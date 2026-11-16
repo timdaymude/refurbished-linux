@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=OneDrive
+Comment=Your files in the cloud
+Exec=brave-browser --new-window https://onedrive.live.com
+Icon=application-x-executable
+Terminal=false
+Categories=Network;
+X-Refurb-Pin=9
+X-Refurb-Group=web
+X-Refurb-Web=https://onedrive.live.com

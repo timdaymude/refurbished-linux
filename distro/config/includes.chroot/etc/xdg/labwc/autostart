@@ -1,0 +1,3 @@
+# The shell draws the bar, launcher and windows. Nothing else starts here:
+# no tray, no notification daemon, no clipboard manager, no indexer.
+/usr/bin/refurb-shell >/dev/null 2>&1 &

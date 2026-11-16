@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Outlook
+Comment=Mail and calendar
+Exec=brave-browser --new-window https://outlook.office.com
+Icon=application-x-executable
+Terminal=false
+Categories=Network;
+X-Refurb-Pin=8
+X-Refurb-Group=web
+X-Refurb-Web=https://outlook.office.com

@@ -1,0 +1,13 @@
+Refurbished Linux 0.2.0 "Focus" — development ISO
+
+file:   refurbished-linux-0.2.0-amd64.iso
+size:   810549248 bytes (773 MiB)
+sha256: 777b498360dc218e02a88a4622fbc10ce1094d579d9c51c14dd48f77814db003
+firmware: BIOS (isolinux) + UEFI (grub efi.img), isohybrid MBR+GPT
+base:   Debian 13 trixie, kernel 6.12
+
+The image itself is not committed (773 MiB). Rebuild it byte-for-byte with:
+    ./scripts/mkiso.sh all
+Verified for this release: boots to multi-user, /etc/issue branding, Cockpit
+socket listening, login prompt on ttyS0. The graphical session and the disk
+installer were NOT verified — see docs/release-0.2.md.

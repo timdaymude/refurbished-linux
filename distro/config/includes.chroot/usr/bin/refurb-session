@@ -1,0 +1,28 @@
+#!/bin/sh
+# The Refurbished Linux desktop session: environment, first-run welcome, labwc.
+set -eu
+
+export XDG_CURRENT_DESKTOP=refurb
+export XDG_SESSION_DESKTOP=refurb
+export XDG_SESSION_TYPE=wayland
+export GDK_BACKEND=wayland,x11
+export QT_QPA_PLATFORM=wayland
+export MOZ_ENABLE_WAYLAND=1
+export BROWSER=brave-browser
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+# Dark is the default everywhere, including GTK apps and Chromium's UI.
+export GTK_THEME=Adwaita:dark
+export QT_STYLE_OVERRIDE=Adwaita-Dark
+
+mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Pictures" 2>/dev/null || true
+command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update >/dev/null 2>&1 || true
+
+# First boot: one page that explains the machine and links to Microsoft 365.
+if [ ! -f "$HOME/.config/refurb/welcomed" ]; then
+    mkdir -p "$HOME/.config/refurb" 2>/dev/null || true
+    : > "$HOME/.config/refurb/welcomed" 2>/dev/null || true
+    ( sleep 5; exec brave-browser --new-window \
+        "file:///usr/share/refurb/welcome/index.html" ) >/dev/null 2>&1 &
+fi
+
+exec dbus-run-session -- /usr/bin/labwc

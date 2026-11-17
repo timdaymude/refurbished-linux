@@ -346,17 +346,21 @@ pub fn volume() -> (f32, bool) {
 }
 
 pub fn set_volume(level: f32) {
-    let pct = format!("{}%", (level.clamp(0.0, VOLUME_MAX) * 100.0).round() as i32);
-    spawn(
-        "wpctl",
-        &[
-            "set-volume",
-            "--limit",
-            "1.6",
-            "@DEFAULT_AUDIO_SINK@",
-            &pct,
-        ],
-    );
+    let level = level.clamp(0.0, VOLUME_MAX);
+    let pct = format!("{}%", (level * 100.0).round() as i32);
+    // Raising the volume has to lift a mute as well: wpctl keeps the mute flag
+    // across set-volume, so the slider moved while the machine stayed silent and
+    // the next poll put "Muted" back on the bar. Both steps run in one shell so
+    // they cannot be reordered.
+    let command = if level > 0.0 {
+        format!(
+            "wpctl set-volume --limit 1.6 @DEFAULT_AUDIO_SINK@ {pct} && \
+             wpctl set-mute @DEFAULT_AUDIO_SINK@ 0"
+        )
+    } else {
+        format!("wpctl set-volume --limit 1.6 @DEFAULT_AUDIO_SINK@ {pct}")
+    };
+    spawn("sh", &["-c", command.as_str()]);
 }
 
 pub fn set_muted(muted: bool) {
@@ -434,10 +438,28 @@ pub fn brightness() -> Option<f32> {
 }
 
 pub fn set_brightness(level: f32) {
-    let pct = format!("{}%", (level.clamp(0.05, 1.0) * 100.0).round() as i32);
+    // Never fully dark: a backlight at zero looks like a dead machine.
+    let level = level.clamp(0.02, 1.0);
     if have("brightnessctl") {
+        let pct = format!("{}%", (level * 100.0).round() as i32);
         spawn("brightnessctl", &["-q", "set", &pct]);
+        return;
     }
+    // No helper installed: write the sysfs node, which the udev rule makes
+    // writable for the desktop user. Without this the slider did nothing at all
+    // on an image that lacked brightnessctl.
+    let Some(dir) = backlight() else {
+        return;
+    };
+    let Some(max) = read_trim(&format!("{dir}/max_brightness")).and_then(|v| v.parse::<f32>().ok())
+    else {
+        return;
+    };
+    if max <= 0.0 {
+        return;
+    }
+    let raw = (level * max).round().max(1.0) as u64;
+    let _ = std::fs::write(format!("{dir}/brightness"), format!("{raw}\n"));
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -456,9 +478,43 @@ pub fn power(action: PowerAction) {
 }
 
 pub fn lock_screen() {
-    if have("swaylock") {
-        spawn("swaylock", &["-f", "-c", "1b1a18"]);
+    if !have("swaylock") {
+        return;
     }
+    // Locking twice stacks a second locker on top of the first. Both grab the
+    // keyboard, so every keystroke is delivered twice and the password can never
+    // match; the screen also looks dead because the top locker never redraws.
+    if run("pgrep", &["-x", "swaylock"]).is_some() {
+        return;
+    }
+    // The indicator is hidden until the first key press, which leaves a plain
+    // black screen with no visible place to type and no sign that keys arrive.
+    // Keep it on screen, with colours that are readable on the dark background.
+    spawn(
+        "swaylock",
+        &[
+            "-f",
+            "--indicator-idle-visible",
+            "--indicator-radius",
+            "90",
+            "--indicator-thickness",
+            "6",
+            "--font-size",
+            "22",
+            "--ring-color",
+            "3ddbd9",
+            "--key-hl-color",
+            "3ddbd9",
+            "--inside-color",
+            "00000000",
+            "--text-color",
+            "ffffff",
+            "--line-color",
+            "1b1a18",
+            "-c",
+            "1b1a18",
+        ],
+    );
 }
 
 // ---------------------------------------------------------------------------

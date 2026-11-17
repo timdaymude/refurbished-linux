@@ -418,6 +418,7 @@ impl Session {
             _ => return,
         }
         wl.commit();
+        self.note(format!("open {id:?} size {width}x{height}"));
         self.surfaces.push(SurfaceEntry {
             id,
             wl,
@@ -648,7 +649,22 @@ impl Session {
 
     // -- actions ---------------------------------------------------------
 
+    fn note(&self, message: impl AsRef<str>) {
+        if std::env::var_os("REFURB_SHELL_DEBUG").is_none() {
+            return;
+        }
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/refurb-debug.log")
+        {
+            let _ = writeln!(file, "{}", message.as_ref());
+        }
+    }
+
     fn dispatch(&mut self, action: Action) {
+        self.note(format!("dispatch {action:?}"));
         self.on_action(action);
         self.sync_panels();
         self.redraw_visible();
@@ -1189,8 +1205,10 @@ impl Session {
             .find(|(rect, _)| crate::render::contains(*rect, x, y))
             .map(|(rect, action)| (*rect, action.clone()));
         let Some((rect, action)) = found else {
+            self.note(format!("press at {x},{y} hit nothing on {surface:?}"));
             return;
         };
+        self.note(format!("press at {x},{y} on {surface:?} -> {action:?} rect {rect:?}"));
         // Sliders carry their own track rect, so the value is taken from the
         // click position and the drag continues from there.
         match action {

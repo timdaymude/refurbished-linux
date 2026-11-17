@@ -96,16 +96,44 @@ mute() {
 }
 
 brightness() {
-    have brightnessctl || return 1
     case ${1:-} in
-    up) brightnessctl -q set 10%+ || return 1 ;;
-    down) brightnessctl -q set 10%- || return 1 ;;
+    up|down) ;;
     *)
         echo "usage: refurb-control brightness up|down" >&2
         return 2
         ;;
     esac
-    show_brightness
+    if have brightnessctl; then
+        case $1 in
+        up) brightnessctl -q set 10%+ || return 1 ;;
+        down) brightnessctl -q set 10%- || return 1 ;;
+        esac
+        show_brightness
+        return 0
+    fi
+    # No helper installed: drive the sysfs node directly. The udev rule makes it
+    # writable for the desktop user, so the keys keep working on a minimal image.
+    for d in /sys/class/backlight/*; do
+        [ -w "$d/brightness" ] || continue
+        cur=$(cat "$d/brightness" 2>/dev/null) || continue
+        max=$(cat "$d/max_brightness" 2>/dev/null) || continue
+        [ "${max:-0}" -gt 0 ] || continue
+        step=$((max / 10))
+        [ "$step" -gt 0 ] || step=1
+        if [ "$1" = up ]; then
+            val=$((cur + step))
+        else
+            val=$((cur - step))
+        fi
+        [ "$val" -gt "$max" ] && val=$max
+        [ "$val" -lt 1 ] && val=1
+        printf '%s\n' "$val" > "$d/brightness" 2>/dev/null || return 1
+        show_brightness
+        return 0
+    done
+    # No backlight at all (desktop machine, VM): the key is a silent no-op
+    # rather than a fake success.
+    return 1
 }
 
 case ${1:-} in

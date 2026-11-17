@@ -1,0 +1,28 @@
+Refurbished Linux 0.3.0-r5 — controls: login field, volume sliders, brightness
+
+file:   refurbished-linux-0.3.0-r5-amd64.iso
+size:   824180736 bytes
+sha256: a3342d3ac2ae90185afa8ec79ed8cbbbb25dada56c351b243ba91f3d6d60bdd9
+
+Root causes found in the running system:
+  - volume and brightness sliders registered only their 6-pixel track as a
+    click target, so most of the row ignored clicks; the whole row is now
+    clickable and the position within the track still sets the value
+  - raising the volume left the sink muted, because wpctl keeps the mute
+    flag across set-volume; it is now lifted in the same command
+  - the brightness slider did nothing when brightnessctl was missing; it
+    now writes the sysfs node the udev rule makes writable, and never goes
+    fully dark
+  - Super+L could stack two lockers, which delivers every keystroke twice,
+    and the password field was invisible until the first key press; one
+    locker only, with the indicator always on screen and readable
+
+Verified in QEMU: a click at the top edge of the volume row (a dead zone
+before) moves the sink from 100% to 47% and the panel shows it; the panel
+opens from the speaker icon and the gear; the brightness row is absent when
+the machine has no backlight device; Super+L locks and the indicator is
+visible; a second press does not stack lockers.
+
+Not verified: a full password unlock with a mixed-character password, real
+backlight hardware, and real audio output in this particular boot.
+Details: docs/controls-0.5.md

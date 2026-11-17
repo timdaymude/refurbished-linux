@@ -304,8 +304,10 @@ pub fn slider(
     let knob_x = track.x() + filled;
     render::circle(cx.pm, knob_x, track.y() + 3.0, 7.5, theme::card());
     render::circle_stroke(cx.pm, knob_x, track.y() + 3.0, 7.5, theme::accent(), 1.6);
-    // Whole row is clickable; the session converts x within `track` to a value.
-    cx.hit(track, action_for(value));
+    // The whole row is clickable, not just the 6px track. A hit area the height
+    // of a hairline made the slider feel dead unless the pointer was exactly on
+    // the line. The session still converts x within `track` to a value.
+    cx.hit(r, action_for(value));
     track
 }
 

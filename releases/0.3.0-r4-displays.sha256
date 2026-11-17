@@ -1,0 +1,21 @@
+Refurbished Linux 0.3.0-r4 — a panel and wallpaper on every screen
+
+file:   refurbished-linux-0.3.0-r4-amd64.iso
+size:   824180736 bytes
+sha256: b1707dd575729786022768df37dc636ded16262b3c955ec59a5136cd9cbcd821
+base:   Debian 13 trixie, kernel 6.12.117-amd64, same fixes as r3
+
+The shell opened one layer-shell bar without naming an output, so the
+compositor put it on a single screen and every other monitor stayed black
+and barless. It now binds each wl_output and gives each screen its own
+wallpaper and its own bar, pinned to that screen.
+
+The bar sits along the top edge like the first screen. To move every bar
+to the bottom, add this to /etc/xdg/labwc/environment and log out:
+  REFURB_BAR_POSITION=bottom
+
+Verified inside the guest against a two-output compositor: the shell
+reports "2 screen(s)" and creates Desktop + Bar on the first screen and
+DesktopOn(1) + BarOn(1) on the second. Single-screen boot checked visually.
+Not verified: a physical second monitor, and hotplugging a screen into a
+running session (outputs are enumerated at startup).

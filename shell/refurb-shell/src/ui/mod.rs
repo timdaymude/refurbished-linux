@@ -25,6 +25,10 @@ pub enum Surface {
     /// Full-output wallpaper layer, drawn once per output-size change.
     Desktop,
     Bar,
+    /// The same wallpaper and bar, on a second or further display. The number is
+    /// the index of the output in the order the compositor advertised them.
+    DesktopOn(u32),
+    BarOn(u32),
     Launcher,
     Quick,
     Software,
@@ -355,8 +359,8 @@ impl App {
         let mut st = std::mem::take(&mut self.st);
         st.view = surface;
         match surface {
-            Surface::Desktop => paint_desktop_background(&mut pm),
-            Surface::Bar => pm.fill(theme::panel()),
+            Surface::Desktop | Surface::DesktopOn(_) => paint_desktop_background(&mut pm),
+            Surface::Bar | Surface::BarOn(_) => pm.fill(theme::panel()),
             Surface::Launcher | Surface::Quick => pm.fill(Color::TRANSPARENT),
             Surface::Software | Surface::Settings => pm.fill(theme::card()),
         }
@@ -372,8 +376,8 @@ impl App {
             };
             match surface {
                 // The wallpaper has no widgets; it is painted by the fill above.
-                Surface::Desktop => {}
-                Surface::Bar => bar::draw(&mut cx, w as f32, h as f32),
+                Surface::Desktop | Surface::DesktopOn(_) => {}
+                Surface::Bar | Surface::BarOn(_) => bar::draw(&mut cx, w as f32, h as f32),
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
                 Surface::Software => software::draw(&mut cx, w as f32, h as f32),
@@ -392,7 +396,7 @@ impl App {
         h: u32,
     ) -> (Pixmap, Vec<(Rect, Action)>) {
         let (overlay, hits) = self.render(surface, w, h);
-        if matches!(surface, Surface::Bar) {
+        if matches!(surface, Surface::Bar | Surface::BarOn(_)) {
             return (overlay, hits);
         }
         let mut base = desktop_background(w, h);

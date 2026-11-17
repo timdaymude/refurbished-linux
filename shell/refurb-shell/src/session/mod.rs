@@ -162,6 +162,11 @@ pub struct Session {
     modifiers: Modifiers,
     app: App,
     surfaces: Vec<SurfaceEntry>,
+    /// Every display the compositor advertised, in registry order. Each one
+    /// gets its own wallpaper and its own bar.
+    outputs: Vec<wl_output::WlOutput>,
+    /// Put the bar along the bottom edge instead of the top (REFURB_BAR_POSITION=bottom).
+    bar_bottom: bool,
     toplevels: Vec<TlEntry>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
@@ -199,8 +204,32 @@ pub fn run() -> Result<(), String> {
         .bind::<zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1, _, _>(&qh, 1..=3, ())
         .ok();
 
+    // Bind every screen. A layer shell surface is placed on one output (or on
+    // whichever the compositor prefers when none is given), so the shell needs
+    // a proxy per screen to put a bar on each of them.
+    let outputs: Vec<wl_output::WlOutput> = {
+        let registry = globals.registry().clone();
+        globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|global| global.interface == "wl_output")
+            .map(|global| {
+                registry.bind::<wl_output::WlOutput, _, _>(
+                    global.name,
+                    global.version.min(4),
+                    &qh,
+                    (),
+                )
+            })
+            .collect()
+    };
+
     let (tx, rx) = mpsc::channel();
     let now = Instant::now();
+    let bar_bottom = std::env::var("REFURB_BAR_POSITION")
+        .map(|value| value.trim().eq_ignore_ascii_case("bottom"))
+        .unwrap_or(false);
     let mut session = Session {
         conn,
         qh: qh.clone(),
@@ -215,6 +244,8 @@ pub fn run() -> Result<(), String> {
         modifiers: Modifiers::default(),
         app: App::new(),
         surfaces: Vec::new(),
+        outputs,
+        bar_bottom,
         toplevels: Vec::new(),
         tx,
         rx,
@@ -236,8 +267,27 @@ pub fn run() -> Result<(), String> {
     let _ = ftl;
 
     // Wallpaper first, then the bar: the desktop must be below everything.
+    // The first screen keeps the plain ids; every further screen gets its own
+    // pair so second and third monitors are not left black and barless.
     session.open_layer(Surface::Desktop);
     session.open_layer(Surface::Bar);
+    let extra = session.outputs.len().saturating_sub(1);
+    for index in 0..extra {
+        let index = index as u32 + 1;
+        session.open_layer(Surface::DesktopOn(index));
+        session.open_layer(Surface::BarOn(index));
+    }
+    // REFURB_SHELL_DEBUG=1 explains what the shell put on screen, which is the
+    // only way to check multi-monitor placement on a machine with no display.
+    if std::env::var_os("REFURB_SHELL_DEBUG").is_some() {
+        eprintln!(
+            "refurb-shell: {} screen(s) seen by the compositor",
+            session.outputs.len()
+        );
+        for entry in &session.surfaces {
+            eprintln!("refurb-shell: surface {:?} {}", entry.id, entry.width);
+        }
+    }
     session.loop_forever(&mut queue)
 }
 
@@ -269,13 +319,22 @@ impl Session {
         let wl = self.compositor.create_surface(&self.qh, id);
         let layer = match id {
             // The wallpaper sits below every window and never takes input.
-            Surface::Desktop => zwlr_layer_shell_v1::Layer::Background,
-            Surface::Bar => zwlr_layer_shell_v1::Layer::Top,
+            Surface::Desktop | Surface::DesktopOn(_) => zwlr_layer_shell_v1::Layer::Background,
+            Surface::Bar | Surface::BarOn(_) => zwlr_layer_shell_v1::Layer::Top,
             _ => zwlr_layer_shell_v1::Layer::Overlay,
+        };
+        // Pin each surface to a real screen: without an output the compositor
+        // picks one, which leaves every other monitor without a bar.
+        let output = match id {
+            Surface::Desktop | Surface::Bar => self.outputs.first().cloned(),
+            Surface::DesktopOn(index) | Surface::BarOn(index) => {
+                self.outputs.get(index as usize).cloned()
+            }
+            _ => None,
         };
         let surface = shell.get_layer_surface(
             &wl,
-            None,
+            output.as_ref(),
             layer,
             format!("refurb-shell-{id:?}"),
             &self.qh,
@@ -284,7 +343,7 @@ impl Session {
         let mut width = 0u32;
         let mut height = BAR_HEIGHT;
         match id {
-            Surface::Desktop => {
+            Surface::Desktop | Surface::DesktopOn(_) => {
                 width = 0;
                 height = 0;
                 // Anchor to all four edges with a zero size: the compositor
@@ -304,10 +363,14 @@ impl Session {
                     zwlr_layer_surface_v1::KeyboardInteractivity::None,
                 );
             }
-            Surface::Bar => {
-                surface.set_anchor(
+            Surface::Bar | Surface::BarOn(_) => {
+                let edge = if self.bar_bottom {
+                    zwlr_layer_surface_v1::Anchor::Bottom
+                } else {
                     zwlr_layer_surface_v1::Anchor::Top
-                        | zwlr_layer_surface_v1::Anchor::Left
+                };
+                surface.set_anchor(
+                    edge | zwlr_layer_surface_v1::Anchor::Left
                         | zwlr_layer_surface_v1::Anchor::Right,
                 );
                 surface.set_size(0, BAR_HEIGHT);
@@ -332,11 +395,21 @@ impl Session {
             Surface::Quick => {
                 width = ui::quick::CARD_W as u32 + 8;
                 height = ui::quick::height(&self.app.st);
-                surface.set_anchor(
-                    zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Right,
-                );
+                // The quick panel hangs off the bar, so it follows whichever
+                // edge the bar sits on.
+                if self.bar_bottom {
+                    surface.set_anchor(
+                        zwlr_layer_surface_v1::Anchor::Bottom
+                            | zwlr_layer_surface_v1::Anchor::Right,
+                    );
+                    surface.set_margin(0, 6, BAR_HEIGHT as i32 + 6, 0);
+                } else {
+                    surface.set_anchor(
+                        zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Right,
+                    );
+                    surface.set_margin(BAR_HEIGHT as i32 + 6, 6, 0, 0);
+                }
                 surface.set_size(width, height);
-                surface.set_margin(BAR_HEIGHT as i32 + 6, 6, 0, 0);
                 surface.set_exclusive_zone(0);
                 surface.set_keyboard_interactivity(
                     zwlr_layer_surface_v1::KeyboardInteractivity::None,
@@ -548,6 +621,22 @@ impl Session {
             .damage(0, 0, width as i32, height as i32);
         entry.wl.commit();
         true
+    }
+
+    /// Repaint the bar on every screen, not just the first one.
+    fn redraw_bars(&mut self) {
+        self.redraw(Surface::Bar);
+        let extra: Vec<u32> = self
+            .surfaces
+            .iter()
+            .filter_map(|entry| match entry.id {
+                Surface::BarOn(index) => Some(index),
+                _ => None,
+            })
+            .collect();
+        for index in extra {
+            self.redraw(Surface::BarOn(index));
+        }
     }
 
     fn redraw_visible(&mut self) {
@@ -1158,7 +1247,7 @@ impl Session {
                 active: entry.active,
             })
             .collect();
-        self.redraw(Surface::Bar);
+        self.redraw_bars();
     }
 
     // -- event loop ------------------------------------------------------
@@ -1204,7 +1293,7 @@ impl Session {
             let previous = self.app.st.clock.clone();
             self.app.tick();
             if self.app.st.clock != previous {
-                self.redraw(Surface::Bar);
+                self.redraw_bars();
             }
         }
         if now.duration_since(self.last_status) >= Duration::from_secs(30) {

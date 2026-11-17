@@ -3,3 +3,9 @@
 # Nothing else starts here: no tray, no notification daemon, no clipboard
 # manager, no indexer.
 /usr/lib/refurb/shell-supervisor /usr/bin/refurb-shell >/dev/null 2>&1 &
+
+# On-screen feedback for the volume and brightness keys: a thin bar near the
+# bottom of the screen for a second. Silent no-op if wob is not installed.
+# Absolute path on purpose: this file is not started from a login shell.
+# The helper owns the FIFO and the wob process (see its own comments).
+/usr/lib/refurb/osd-start >/dev/null 2>&1 &

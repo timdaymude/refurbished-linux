@@ -1,0 +1,22 @@
+Refurbished Linux 0.3.0-r3 — hardware round: Wi-Fi, Bluetooth, audio, media keys
+
+file:   refurbished-linux-0.3.0-r3-amd64.iso
+size:   824180736 bytes
+sha256: 7262e2dc5470fc4ee41e67ac22f58d9a6c1e73ff203edd061e7d950f3d9417e1
+firmware: BIOS (isolinux) + UEFI (grub efi.img), isohybrid MBR+GPT
+base:   Debian 13 trixie, kernel 6.12.117-amd64
+
+Fixes, with evidence, in docs/hardware-0.4.md:
+  - wpa_supplicant was missing entirely -> Wi-Fi could never scan or join
+  - bluetooth.service was never enabled -> no adapter, no scanning
+  - PipeWire/WirePlumber were never started -> no sound, bar said "Muted"
+  - volume slider had a hidden mute hit area -> volume appeared to reset
+  - setuid bits were missing -> sudo/su unusable in every earlier image
+  - source dirs 0700 were copied into the image -> login "no shell"
+  - Microsoft 365/Outlook/OneDrive/Teams launchers removed
+
+Verified in QEMU/OVMF: desktop boots; Bluetooth, NetworkManager and
+wpa_supplicant active; Wi-Fi scan returns a test AP; 2s of sine captured
+from the emulated codec (peak 23844); media keys move the volume; 160%
+amplification works; mute does not return.
+Unverified: real radios, real codecs, brightness hardware, OSD overlay.

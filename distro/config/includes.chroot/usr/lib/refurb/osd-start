@@ -1,0 +1,18 @@
+#!/bin/sh
+# Start the on-screen display used by the volume and brightness keys.
+#
+# This lives in its own script instead of inline in the labwc autostart file:
+# opening a FIFO for reading blocks until a writer appears, and labwc runs the
+# autostart file itself, so an inline redirect froze start-up before wob had a
+# chance to run (0.4 development image).
+set -u
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+fifo="${XDG_RUNTIME_DIR:-/tmp}/refurb-osd.fifo"
+[ -p "$fifo" ] || mkfifo "$fifo" 2>/dev/null || exit 0
+
+# Read-write open: never waits for a writer, and keeps the fifo alive between
+# key presses so wob stays up instead of exiting at end-of-file.
+exec 3<>"$fifo"
+exec wob -c /etc/xdg/wob/wob.ini <&3

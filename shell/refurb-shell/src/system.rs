@@ -323,6 +323,11 @@ pub fn bt_disconnect(mac: &str) {
 // audio, brightness, power
 // ---------------------------------------------------------------------------
 
+/// Ceiling for the sink volume. 1.0 is "normal"; the machine is allowed to be
+/// driven to 160% so quiet laptops can be heard. WirePlumber stops at 150% on
+/// its own, so `set-volume` passes `--limit` explicitly.
+pub const VOLUME_MAX: f32 = 1.6;
+
 pub fn volume() -> (f32, bool) {
     if let Some(out) = run("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"]) {
         let muted = out.contains("[MUTED]");
@@ -331,14 +336,27 @@ pub fn volume() -> (f32, bool) {
             .nth(1)
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(0.0);
-        return (level.clamp(0.0, 1.5), muted);
+        return (level.clamp(0.0, VOLUME_MAX), muted);
     }
-    (0.0, true)
+    // No audio server (yet): report silence but *not* muted. Reporting muted
+    // here is what made 0.3.0 look like the machine kept muting itself — the
+    // bar showed "Muted" and every slider move was overwritten by the next
+    // poll, because wpctl had no daemon to talk to at all.
+    (0.0, false)
 }
 
 pub fn set_volume(level: f32) {
-    let pct = format!("{}%", (level.clamp(0.0, 1.0) * 100.0).round() as i32);
-    spawn("wpctl", &["set-volume", "@DEFAULT_AUDIO_SINK@", &pct]);
+    let pct = format!("{}%", (level.clamp(0.0, VOLUME_MAX) * 100.0).round() as i32);
+    spawn(
+        "wpctl",
+        &[
+            "set-volume",
+            "--limit",
+            "1.6",
+            "@DEFAULT_AUDIO_SINK@",
+            &pct,
+        ],
+    );
 }
 
 pub fn set_muted(muted: bool) {
@@ -346,6 +364,22 @@ pub fn set_muted(muted: bool) {
         "wpctl",
         &["set-mute", "@DEFAULT_AUDIO_SINK@", if muted { "1" } else { "0" }],
     );
+}
+
+/// Shared helper for the media keys: one implementation for the keyboard, the
+/// bar and the settings window, with on-screen feedback.
+pub fn control(args: &[&str]) {
+    if have("refurb-control") {
+        spawn("refurb-control", args);
+        return;
+    }
+    // Fall back to wpctl if the helper is missing (an older image).
+    match args {
+        ["volume", "up"] => spawn("wpctl", &["set-volume", "--limit", "1.6", "@DEFAULT_AUDIO_SINK@", "5%+"]),
+        ["volume", "down"] => spawn("wpctl", &["set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"]),
+        ["mute"] => spawn("wpctl", &["set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"]),
+        _ => {}
+    }
 }
 
 pub fn battery() -> Option<(f32, bool)> {

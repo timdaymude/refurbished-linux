@@ -1,6 +1,16 @@
 #!/bin/sh
 # Remove documentation and caches that only cost disk and update time.
 set -e
+# The Microsoft web-app launchers that 0.3.0 shipped are not part of the
+# system. Removing them from the tree is not enough on an image that already
+# contains them: refresh the copy too, so upgrades and rebuilds both end up
+# clean. Users can still open those services in Brave whenever they choose.
+rm -f /usr/share/applications/refurb-microsoft-365.desktop \
+      /usr/share/applications/refurb-onedrive.desktop \
+      /usr/share/applications/refurb-outlook.desktop \
+      /usr/share/applications/refurb-teams.desktop
+update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+
 apt-get clean
 rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
 rm -rf /usr/share/doc/*/changelog.Debian.gz 2>/dev/null || true

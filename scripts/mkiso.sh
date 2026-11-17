@@ -155,6 +155,14 @@ stage_configure() {
     # as the unprivileged build user that makes this copy fail and silently
     # skips every hook after it. Make the tree writable for its owner first.
     chmod -R u+rwX "$ROOTFS" 2>/dev/null || true
+
+    # Git does not store directory modes: a checkout made under a restrictive
+    # umask has 0700 directories, and `cp -a` copies that onto /etc, /usr and
+    # the image root. A session running as a normal user then cannot traverse
+    # /usr, and login fails with "no shell: Permission denied". Normalise the
+    # directory modes only; file modes are meaningful (sudoers 0440, shadow
+    # 0640) and are deliberately left alone.
+    find "$DISTRO/config/includes.chroot" -type d -exec chmod 0755 {} +
     cp -a "$DISTRO/config/includes.chroot/." "$ROOTFS/"
     install -d "$ROOTFS/tmp/debs"
     cp "$DISTRO"/config/packages.chroot/*.deb "$ROOTFS/tmp/debs/"
@@ -173,6 +181,26 @@ stage_configure() {
         as_root chroot "$ROOTFS" /bin/bash -c 'set -e; export PATH=/usr/sbin:/usr/bin:/sbin:/bin; /tmp/hook.sh'
         rm -f "$ROOTFS/tmp/hook.sh"
     done
+
+    # The build is rootless: tar runs as one mapped uid and silently drops the
+    # setuid/setgid bits, so dpkg records them but the files stay 0755. The
+    # squashfs then ships a sudo that refuses to run ("must be owned by uid 0
+    # and have the setuid bit set") and a su that cannot change user. Restore
+    # the bits the packages ask for, explicitly.
+    as_root chroot "$ROOTFS" /bin/bash -c '
+        set -e
+        for f in /usr/bin/sudo /usr/bin/su /usr/bin/passwd /usr/bin/chsh \
+                 /usr/bin/chfn /usr/bin/newgrp /usr/bin/gpasswd \
+                 /usr/bin/mount /usr/bin/umount /usr/bin/pkexec; do
+            if [ -e "$f" ]; then chmod 4755 "$f"; fi
+        done
+        for f in /usr/sbin/unix_chkpwd \
+                 /usr/lib/dbus-1.0/dbus-daemon-launch-helper \
+                 /usr/lib/openssh/ssh-keysign; do
+            if [ -e "$f" ]; then chmod 2755 "$f"; fi
+        done
+        true
+    '
 
     # live-boot needs an initramfs that knows how to find the squashfs.
     as_root env LD_PRELOAD=/lib/libchownshim.so TAR_OPTIONS="--no-same-owner" chroot "$ROOTFS" /bin/bash -c "

@@ -7,3 +7,10 @@ firmware-realtek
 firmware-atheros
 firmware-brcm80211
 firmware-mediatek
+# Sound: the SOF (Sound Open Firmware) blobs and the older Intel SST ones.
+# Modern Intel laptops have no working codec at all without these, which is
+# the usual reason a machine reports "dummy output" and no volume control.
+firmware-sof-signed
+firmware-intel-sound
+# Bluetooth radios on Broadcom/Intel combo cards.
+bluez-firmware

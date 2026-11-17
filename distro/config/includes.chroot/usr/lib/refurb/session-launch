@@ -1,0 +1,32 @@
+#!/bin/sh
+# Bring the audio graph up, then run the compositor.
+#
+# The desktop is started from a plain system unit through runuser, not by
+# logind, so there is no systemd user instance and nothing else would ever
+# start PipeWire or WirePlumber. Without them wpctl has no default sink at
+# all: the bar reads "Muted", the volume slider is overwritten on the next
+# poll, and nothing can play sound. That is exactly what 0.3.0 shipped.
+set -u
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+log="$runtime/refurb-audio.log"
+
+start_audio() {
+    command -v pipewire >/dev/null 2>&1 || return 0
+    pipewire >>"$log" 2>&1 &
+    command -v pipewire-pulse >/dev/null 2>&1 && pipewire-pulse >>"$log" 2>&1 &
+    command -v wireplumber >/dev/null 2>&1 && wireplumber >>"$log" 2>&1 &
+    # Wait for the daemon before the first frame, so the volume shown at login
+    # is the real one rather than the "no audio server" placeholder.
+    i=0
+    while [ "$i" -lt 50 ]; do
+        wpctl status >/dev/null 2>&1 && return 0
+        i=$((i + 1))
+        sleep 0.1
+    done
+}
+
+start_audio
+exec labwc

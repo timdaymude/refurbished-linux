@@ -723,7 +723,11 @@ impl Session {
                 }
                 self.spawn_bt_refresh();
             }
-            Action::VolumeSet(level) => {
+            Action::VolumeSet(fraction) => {
+                // The sliders report a 0..1 position on their track; the track
+                // covers the whole 0..160% range, so the last third of it is
+                // amplification.
+                let level = fraction.clamp(0.0, 1.0) * system::VOLUME_MAX;
                 system::set_volume(level);
                 self.app.st.status.volume = level;
                 self.app.st.status.muted = false;

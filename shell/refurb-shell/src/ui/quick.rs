@@ -152,7 +152,13 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                 } else {
                     format!("{pct}%")
                 };
-                let value = if st.status.muted { 0.0 } else { st.status.volume };
+                // The track spans the whole 0..160% range (see
+                // system::VOLUME_MAX); the fill is a fraction of the track.
+                let value = if st.status.muted {
+                    0.0
+                } else {
+                    st.status.volume / crate::system::VOLUME_MAX
+                };
                 let track = widgets::slider(
                     cx,
                     render::rect(r.x(), r.y(), r.width() - 46.0, r.height()),
@@ -174,7 +180,13 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                     REGULAR,
                     theme::ink_soft(),
                 );
-                cx.hit(render::rect(track.x(), r.y(), track.width(), r.height()), Action::MuteToggle);
+                // Only the speaker icon toggles mute. Clicking the track used to
+                // do both (set the volume and silently mute), which is why the
+                // slider appeared to snap back to muted in 0.3.0.
+                cx.hit(
+                    render::rect(track.x() - 30.0, r.y(), 30.0, r.height()),
+                    Action::MuteToggle,
+                );
             }
             Block::Brightness => {
                 let r = render::rect(x, y, width, SLIDER_H);

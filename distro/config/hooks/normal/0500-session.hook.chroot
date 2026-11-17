@@ -12,6 +12,23 @@ for group in _seatd seatd; do
     done
 done
 
+# Networking and Bluetooth: both are installed, but a package being present
+# does not mean its service starts. 0.3.0 never enabled bluetooth.service, so
+# the adapter stayed down, the quick-settings tile said "Not available" and
+# scanning could never return anything.
+systemctl enable NetworkManager.service >/dev/null 2>&1 || true
+# `systemctl enable` inside a build chroot can fall back to the SysV helper and
+# return success without creating the unit symlink (that is how 0.3.0 shipped
+# with Bluetooth present but never started). Create the link explicitly.
+ln -sf /usr/lib/systemd/system/bluetooth.service \
+       /etc/systemd/system/multi-user.target.wants/bluetooth.service
+# Some laptops ship with the radio soft-blocked; clear it before BlueZ starts.
+mkdir -p /etc/systemd/system/bluetooth.service.d
+cat > /etc/systemd/system/bluetooth.service.d/10-refurb-rfkill.conf <<'CONF'
+[Service]
+ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
+CONF
+
 systemctl enable refurb-session.service >/dev/null 2>&1 || true
 # Memory report: enabled but inert unless refurb.measure=1 is on the cmdline.
 systemctl enable refurb-diag.service >/dev/null 2>&1 || true
@@ -30,6 +47,8 @@ systemctl set-default graphical.target >/dev/null 2>&1 || true
 
 for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
+               /usr/lib/refurb/session-launch /usr/lib/refurb/refurb-control \
+               /usr/lib/refurb/osd-start \
                /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
 done

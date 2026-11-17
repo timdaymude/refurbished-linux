@@ -11,10 +11,21 @@ udev
 dbus
 sudo
 network-manager
+# Wi-Fi scanning and WPA/WPA2/WPA3 association. NetworkManager calls
+# wpa_supplicant for the actual association; without it every scan comes back
+# empty and "no networks found" is the only possible result.
+wpasupplicant
+iw
 bluez
 rfkill
 pipewire
 pipewire-pulse
+# ALSA applications (including most native games) reach PipeWire through this.
+pipewire-alsa
+# Per-machine mixer profiles (UCM): without them many laptop codecs come up
+# with the wrong output selected, or muted.
+alsa-ucm-conf
+alsa-utils
 wireplumber
 libspa-0.2-bluetooth
 wireless-regdb

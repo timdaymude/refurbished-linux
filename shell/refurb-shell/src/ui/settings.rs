@@ -265,7 +265,7 @@ fn sound(cx: &mut Ctx, pane: Rect) {
         cx,
         render::rect(row.x(), row.y(), row.width() - 56.0, 34.0),
         icons::Glyph::Volume,
-        st.status.volume,
+        st.status.volume / crate::system::VOLUME_MAX,
         super::SliderKind::Volume,
         Action::VolumeSet,
     );

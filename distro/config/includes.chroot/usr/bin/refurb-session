@@ -2,6 +2,11 @@
 # The Refurbished Linux desktop session: environment, first-run welcome, labwc.
 set -u
 
+# labwc starts its autostart script and the keybinds with whatever PATH it
+# inherits. Without this, `command -v wob` and the media keys could not find
+# anything outside a login shell, and the OSD silently never started.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 export XDG_CURRENT_DESKTOP=refurb
 export XDG_SESSION_DESKTOP=refurb
 export XDG_SESSION_TYPE=wayland
@@ -34,4 +39,7 @@ if [ ! -f "$welcome_marker" ] && mkdir -p "$HOME/.config/refurb" 2>/dev/null \
         "file:///usr/share/refurb/welcome/index.html" ) >/dev/null 2>&1 &
 fi
 
-exec dbus-run-session -- /usr/bin/labwc
+# PipeWire, pipewire-pulse and WirePlumber must live in the same session bus as
+# the compositor, so they are started there rather than by a logind user
+# session that this machine does not have.
+exec dbus-run-session -- /usr/lib/refurb/session-launch

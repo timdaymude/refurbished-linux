@@ -1,0 +1,17 @@
+Refurbished Linux 0.3.0-r2 — UEFI boot fix (same system, corrected bootloader menu)
+
+file:   refurbished-linux-0.3.0-r2-amd64.iso
+size:   810549248 bytes (773 MiB)
+sha256: 676c08c9532e75881a4119b0e5868c2b2fa0a15772030b7f5b575cff5eb06d27
+firmware: BIOS (isolinux menu.c32) + UEFI (grub efi.img), isohybrid MBR+GPT
+base:   Debian 13 trixie, kernel 6.12.117-amd64 (identical to 0.3.0)
+
+Fixes the 0.3.0 failure "file /live/vmlinuz not found / you need to load
+the kernel first" on UEFI machines: the GRUB menu now searches the live
+medium instead of assuming $root, and no longer uses shell ${var:-default}
+syntax that GRUB cannot parse. See docs/release-0.3.md.
+
+Verified under OVMF (UEFI), 2 cores / 2 GB / TCG:
+  - ISO as DVD (El Torito): 0 GRUB errors, desktop up
+  - ISO as USB stick (dd-style): 0 GRUB errors, boot completes
+  - docs/screenshots/0.3.0-r2-uefi-desktop.png

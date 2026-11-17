@@ -121,3 +121,60 @@ loaded. Two honest caveats:
    hand on a test boot.
 7. The live account `refurb` is **passwordless** by design (as on Debian live
    media). The installed system must create a real account with a password.
+
+## 0.3.0-r2: the UEFI boot fix (17 November 2026)
+
+The shipped 0.3.0 image failed on real UEFI hardware, before any kernel code
+ran, with:
+
+    error: file '/live/vmlinuz' not found.
+    error: you need to load the kernel first.
+
+PCI/BIOS machines were fine, which is why the QEMU validation missed it. Two
+independent bugs in the UEFI GRUB menu were responsible.
+
+1. **GRUB looked in the wrong place.** On a UEFI boot the firmware loads
+   `EFI/BOOT/BOOTX64.EFI` out of the 10 MB FAT image (`boot/grub/efi.img`,
+   label REFURBEFI). GRUB starts with `$root` on the device it was itself
+   loaded from, so `$root` was that FAT image, where `/live/vmlinuz` cannot
+   exist. The menu now locates the live medium first:
+
+       search --no-floppy --set=root --file /live/vmlinuz
+       # then /live/filesystem.squashfs, then --label REFURBISHED_LINUX
+
+   and every path is written as `($root)/live/...`. This covers CD, DVD and an
+   ISO dd-written to a USB stick, where the ISO9660 volume is reached through
+   the device rather than a partition.
+
+2. **The menu used shell syntax GRUB does not have.** The entry lines were
+   generated as `... console=ttyS0,115200 ${BOOT_EXTRA:-quiet splash}` and the
+   title as `"Start Refurbished Linux${REFURB_GRUB_EXTRA:-}"`. GRUB's script
+   language expands `$var` but has no `${var:-default}` form, so parsing
+   produced `syntax error`, `Incorrect command` and finally
+   `you need to load the kernel first`. The generated config now contains
+   literal values only; the test switches (`BOOT_EXTRA`, `MENU_TIMEOUT`,
+   `REFURB_GRUB_EXTRA`) are applied with `sed`, exactly as the syslinux path
+   always did.
+
+The module set was also incomplete for the paths above: `--file` needs
+`search_fs_file`, `--label` needs `search_label`, and reading the ISO volume
+needs `iso9660` (plus `udf` and `ntfs` for odd media). All are now embedded in
+the standalone EFI binary.
+
+### Verification of 0.3.0-r2
+
+Rebuilt from the 0.3.0 ISO tree (squashfs, kernel and initrd byte-identical;
+only `boot/grub/efi.img` and the menus changed), then booted under **OVMF**
+(UEFI firmware, 2 cores, 2 GB, TCG, no KVM):
+
+| path | GRUB errors | result |
+|---|---|---|
+| UEFI, ISO as DVD (`ide-cd`, El Torito) | 0 | login prompt on serial, desktop up |
+| UEFI, ISO as USB stick (`usb-storage` + xHCI, dd-style) | 0 | login prompt on serial, boot completes |
+
+Desktop evidence under UEFI: `docs/screenshots/0.3.0-r2-uefi-desktop.png`
+(bar, wallpaper, Brave welcome page, dark palette). The BIOS/isolinux path is
+unchanged from 0.3.0, which was verified at release time.
+
+Still true from above: no installer, no physical-hardware testing beyond this,
+Brave extensions and radios unverified.

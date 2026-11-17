@@ -255,24 +255,69 @@ EOF
     # UEFI: a self-contained grub image, so no second filesystem is needed.
     GRUB_MOD="$TOOLBOX/usr/lib/grub/x86_64-efi"
     if [ -d "$GRUB_MOD" ]; then
+        # GRUB starts with $root on the device it was itself loaded from. On
+        # UEFI that is the 10 MB FAT image carrying this binary (label
+        # REFURBEFI), which never contains /live/vmlinuz, so a bare
+        # "linux /live/vmlinuz" fails on real hardware with
+        #   error: file '/live/vmlinuz' not found.
+        #   error: you need to load the kernel first.
+        # Find the medium that really holds /live instead: by kernel file
+        # first, then by squashfs, then by volume label. This works for a CD,
+        # a DVD and an ISO dd-written to a USB stick.
+        # Note: GRUB's script language has no ${VAR:-default} expansion, so
+        # nothing here may use shell parameter syntax; BOOT_EXTRA, MENU_TIMEOUT
+        # and the test title are patched in with sed below, as for syslinux.
         cat > "$WORK/grub-efi.cfg" <<'EOF'
 set timeout=3
 set default=0
-menuentry "Start Refurbished Linux${REFURB_GRUB_EXTRA:-}" {
-    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 ${BOOT_EXTRA:-quiet splash}
-    initrd /live/initrd.img
+
+# GRUB starts with $root on the device it was loaded from. On UEFI that is the
+# 10 MB FAT image carrying this binary (label REFURBEFI), which never contains
+# /live/vmlinuz, so a plain "linux /live/vmlinuz" dies on real hardware with
+#   error: file '/live/vmlinuz' not found.
+#   error: you need to load the kernel first.
+# Locate the medium that really holds /live: kernel file, then squashfs, then
+# volume label. Covers CD, DVD and an ISO dd-written to a USB stick.
+set live_found=0
+if search --no-floppy --set=root --file /live/vmlinuz; then
+    set live_found=1
+fi
+if [ "$live_found" = 0 ]; then
+    if search --no-floppy --set=root --file /live/filesystem.squashfs; then
+        set live_found=1
+    fi
+fi
+if [ "$live_found" = 0 ]; then
+    if search --no-floppy --set=root --label REFURBISHED_LINUX; then
+        set live_found=1
+    fi
+fi
+
+menuentry "Start Refurbished Linux" {
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet splash
+    initrd ($root)/live/initrd.img
 }
 menuentry "Start Refurbished Linux (verbose boot)" {
-    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200
-    initrd /live/initrd.img
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200
+    initrd ($root)/live/initrd.img
 }
 menuentry "Memory report (support / benchmark boot)" {
-    linux /live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
-    initrd /live/initrd.img
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
+    initrd ($root)/live/initrd.img
 }
 EOF
+        sed -i "s|^set timeout=3|set timeout=${MENU_TIMEOUT:-3}|" "$WORK/grub-efi.cfg"
+        if [ -n "${BOOT_EXTRA:-}" ]; then
+            sed -i "s|quiet splash|${BOOT_EXTRA}|" "$WORK/grub-efi.cfg"
+        fi
+        if [ -n "${REFURB_GRUB_EXTRA:-}" ]; then
+            sed -i "s|Start Refurbished Linux\"|Start Refurbished Linux${REFURB_GRUB_EXTRA}\"|" "$WORK/grub-efi.cfg"
+        fi
+        # iso9660/udf: reading the ISO volume itself; search_fs_file and
+        # search_label: the --file and --label forms used above (plain
+        # "search" alone only offers --fs-uuid).
         grub-mkstandalone --directory "$GRUB_MOD" -O x86_64-efi \
-            --modules="part_gpt part_msdos fat exfat ext2 normal linux search search_fs_uuid configfile echo all_video gfxterm" \
+            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm" \
             --locales="" --fonts="" --themes="" \
             --output="$WORK/bootx64.efi" \
             "boot/grub/grub.cfg=$WORK/grub-efi.cfg" || echo "grub-mkstandalone failed: BIOS-only ISO" >&2

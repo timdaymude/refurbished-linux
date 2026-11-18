@@ -122,6 +122,8 @@ pub enum Action {
     WifiPasswordChar(char),
     WifiPasswordBackspace,
     WifiPasswordSubmit,
+    /// Give the password field the keyboard focus (a click on the field).
+    WifiPasswordFocus,
     WifiForget,
     BtPower,
     BtList,
@@ -158,6 +160,8 @@ pub struct Status {
     pub muted: bool,
     pub battery: Option<(f32, bool)>,
     pub brightness: Option<f32>,
+    /// True only when a backlight can actually be changed on this machine.
+    pub backlight: bool,
     pub updates: u32,
     pub hostname: String,
     pub mem_total_mb: u64,
@@ -285,6 +289,32 @@ impl Default for State {
     }
 }
 
+/// Read everything the interface shows about the machine. Slow: it launches
+/// `nmcli`, `bluetoothctl` and `wpctl`, so the session calls it from a worker
+/// thread and never from the event loop.
+pub fn read_status() -> Status {
+    use crate::system;
+    let mut status = Status::default();
+    status.wifi_present = system::network_manager_present();
+    status.wifi_enabled = system::wifi_enabled();
+    status.wifi = system::wifi_status();
+    status.bt = system::bt_status();
+    let (vol, muted) = system::volume();
+    status.volume = vol;
+    status.muted = muted;
+    status.battery = system::battery();
+    status.brightness = system::brightness();
+    status.backlight = system::brightness_available();
+    status.updates = system::cached_update_count();
+    status.hostname = system::hostname();
+    if let Some(m) = system::memory() {
+        status.mem_total_mb = m.total_mb;
+        status.mem_available_mb = m.available_mb;
+    }
+    status.cpu = system::cpu_model();
+    status
+}
+
 pub struct App {
     pub st: State,
     pub text: TextEngine,
@@ -317,23 +347,30 @@ impl App {
 
     /// Values that change slowly. Called at session start and on a 30s timer.
     pub fn refresh_status(&mut self) {
-        use crate::system;
-        self.st.status.wifi_present = system::network_manager_present();
-        self.st.status.wifi_enabled = system::wifi_enabled();
-        self.st.status.wifi = system::wifi_status();
-        self.st.status.bt = system::bt_status();
-        let (vol, muted) = system::volume();
-        self.st.status.volume = vol;
-        self.st.status.muted = muted;
-        self.st.status.battery = system::battery();
-        self.st.status.brightness = system::brightness();
-        self.st.status.updates = system::cached_update_count();
-        self.st.status.hostname = system::hostname();
-        if let Some(m) = system::memory() {
-            self.st.status.mem_total_mb = m.total_mb;
-            self.st.status.mem_available_mb = m.available_mb;
+        let status = read_status();
+        self.apply_status(status, false);
+    }
+
+    /// Replace the machine status without clobbering a control the user is
+    /// moving right now. A poll that lands mid-drag used to snap the slider
+    /// back to the level it read before the drag started, which is one of the
+    /// reasons the volume and brightness sliders were unusable.
+    pub fn apply_status(&mut self, status: Status, keep_controls: bool) {
+        let volume = self.st.status.volume;
+        let muted = self.st.status.muted;
+        let brightness = self.st.status.brightness;
+        let backlight = self.st.status.backlight;
+        self.st.status = status;
+        if keep_controls {
+            self.st.status.volume = volume;
+            self.st.status.muted = muted;
+            if brightness.is_some() {
+                self.st.status.brightness = brightness;
+                self.st.status.backlight = true;
+            } else {
+                self.st.status.backlight = backlight;
+            }
         }
-        self.st.status.cpu = system::cpu_model();
     }
 
     /// Clock text; cheap enough to call every second.

@@ -32,7 +32,10 @@ home=$(getent passwd "$target" | cut -d: -f6)
 # whoever ran the build. Repair it here: this runs as root, before the session.
 if [ -n "$home" ]; then
     [ -d "$home" ] || mkdir -p "$home" 2>/dev/null || true
-    chown "$uid:$gid" "$home" 2>/dev/null || true
+    # Contents too, not just the directory: a skeleton file left owned by root
+    # makes bash print ".bashrc: Permission denied" on every terminal and hides
+    # the user's own settings.
+    chown -R "$uid:$gid" "$home" 2>/dev/null || chown "$uid:$gid" "$home" 2>/dev/null || true
     chmod 0700 "$home" 2>/dev/null || true
 fi
 export XDG_RUNTIME_DIR=/run/user/$uid

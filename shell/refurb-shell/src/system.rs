@@ -6,7 +6,6 @@
 //! client, no polling daemon and no state kept after the shell exits. Calls
 //! are made when the user opens a panel and on a slow background refresh.
 
-use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -32,25 +31,6 @@ fn run(prog: &str, args: &[&str]) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
-/// Run a command with stdin available (used to feed passwords to nmcli over a
-/// pipe instead of putting them on the command line).
-fn run_with_stdin(prog: &str, args: &[&str], stdin_text: &str) -> Option<String> {
-    let mut child = Command::new(prog)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-    if let Some(mut si) = child.stdin.take() {
-        let _ = si.write_all(stdin_text.as_bytes());
-    }
-    let out = child.wait_with_output().ok()?;
-    let mut text = String::from_utf8_lossy(&out.stdout).to_string();
-    text.push_str(&String::from_utf8_lossy(&out.stderr));
-    Some(text)
 }
 
 pub fn spawn(prog: &str, args: &[&str]) {
@@ -121,8 +101,48 @@ fn split_t(line: &str) -> Vec<String> {
     out
 }
 
+/// The wireless interface a user can actually join a network with.
+///
+/// `nmcli device wifi list` merges the results of every wireless interface,
+/// including one that is running a hotspot: the hotspot's own SSID then shows
+/// up as "Connected", and clicking it disconnects instead of asking for a
+/// password. Asking a station interface for its own scan results keeps the list
+/// to networks this machine can join.
+fn wifi_client_interface() -> Option<String> {
+    // iw lives in /usr/sbin, which is not always in the session's PATH.
+    let out = run("/usr/sbin/iw", &["dev"]).or_else(|| run("iw", &["dev"]))?;
+    let mut interface: Option<String> = None;
+    for line in out.lines() {
+        let line = line.trim();
+        if let Some(name) = line.strip_prefix("Interface ") {
+            interface = Some(name.trim().to_string());
+        } else if line == "type managed" {
+            if let Some(name) = interface.clone() {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+/// `nmcli` arguments with the client interface appended when it is known.
+fn wifi_list_args(base: &[&str], interface: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = base.iter().map(|s| s.to_string()).collect();
+    if let Some(name) = interface {
+        args.push("ifname".into());
+        args.push(name.to_string());
+    }
+    args
+}
+
 pub fn wifi_status() -> Option<WifiStatus> {
-    let out = run("nmcli", &["-t", "-f", "IN-USE,SSID,SIGNAL", "device", "wifi"])?;
+    let interface = wifi_client_interface();
+    let args = wifi_list_args(
+        &["-t", "-f", "IN-USE,SSID,SIGNAL", "device", "wifi"],
+        interface.as_deref(),
+    );
+    let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let out = run("nmcli", &argv)?;
     for line in out.lines() {
         let f = split_t(line);
         if f.len() >= 3 && f[0].trim() == "*" {
@@ -146,12 +166,22 @@ pub fn set_wifi_enabled(on: bool) {
 }
 
 /// Ask NetworkManager for a fresh scan and return visible networks.
+///
+/// Runs on a worker thread: the rescan is awaited (NetworkManager rejects a
+/// second scan within a few seconds) and the list is read afterwards, so the
+/// panel shows the networks the scan just found instead of the previous cache.
 pub fn scan_wifi() -> Vec<WifiNetwork> {
-    spawn("nmcli", &["device", "wifi", "rescan"]);
-    let Some(out) = run(
-        "nmcli",
+    let interface = wifi_client_interface();
+    let rescan = wifi_list_args(&["device", "wifi", "rescan"], interface.as_deref());
+    let rescan_args: Vec<&str> = rescan.iter().map(|s| s.as_str()).collect();
+    let _ = run("nmcli", &rescan_args);
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    let list = wifi_list_args(
         &["-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
-    ) else {
+        interface.as_deref(),
+    );
+    let list_args: Vec<&str> = list.iter().map(|s| s.as_str()).collect();
+    let Some(out) = run("nmcli", &list_args) else {
         return Vec::new();
     };
     let mut nets: Vec<WifiNetwork> = Vec::new();
@@ -179,9 +209,17 @@ pub fn scan_wifi() -> Vec<WifiNetwork> {
     nets
 }
 
-/// Connect to a network. Secrets go through stdin so they never appear in the
-/// process list.
+/// Connect to a network.
+///
+/// The password is passed as an argument rather than through a shell, so no
+/// quoting or escaping can corrupt it: spaces, `$`, `!`, quotes and non-ASCII
+/// characters reach NetworkManager exactly as they were typed. The reason the
+/// network does not come up is returned to the caller instead of being thrown
+/// away, so the panel can say what actually failed.
 pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<(), String> {
+    if !have("nmcli") {
+        return Err("NetworkManager is not installed.".into());
+    }
     let mut args: Vec<String> = vec![
         "device".into(),
         "wifi".into(),
@@ -193,17 +231,38 @@ pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<(), String> {
         args.push(pw.into());
     }
     let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let out = run("nmcli", &argv);
+    let out = Command::new("nmcli")
+        .args(&argv)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
     match out {
-        Some(_) => Ok(()),
-        None => Err("Could not connect. Check the password and try again.".into()),
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => {
+            let mut text = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if text.is_empty() {
+                text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
+            // nmcli prints several lines; the first one is the actual reason.
+            let reason = text
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("NetworkManager refused the connection.")
+                .trim()
+                .replace("Error: ", "");
+            // "already active" is a success in disguise: the profile worked.
+            if reason.contains("already active") {
+                return Ok(());
+            }
+            Err(if reason.chars().count() > 120 {
+                reason.chars().take(120).collect::<String>() + "…"
+            } else {
+                reason
+            })
+        }
+        Err(e) => Err(format!("Could not run nmcli: {e}")),
     }
-    .map(|_| ())
-    .map_err(|e: String| {
-        // nmcli returns non-zero for "already active" too; treat that as fine.
-        let _ = run_with_stdin("nmcli", &["-t", "connection", "show", "--active"], "");
-        e
-    })
 }
 
 pub fn disconnect_wifi() {
@@ -328,6 +387,9 @@ pub fn bt_disconnect(mac: &str) {
 /// its own, so `set-volume` passes `--limit` explicitly.
 pub const VOLUME_MAX: f32 = 1.6;
 
+/// The sink every control addresses. One string, one place to change it.
+const SINK: &str = "@DEFAULT_AUDIO_SINK@";
+
 pub fn volume() -> (f32, bool) {
     if let Some(out) = run("wpctl", &["get-volume", "@DEFAULT_AUDIO_SINK@"]) {
         let muted = out.contains("[MUTED]");
@@ -345,22 +407,36 @@ pub fn volume() -> (f32, bool) {
     (0.0, false)
 }
 
-pub fn set_volume(level: f32) {
+/// Apply a sink volume. Called from the volume worker, never from the event
+/// loop: each `wpctl` call is a process launch, and doing that once per pointer
+/// motion event is what made dragging the slider feel unreliable. `wpctl` is
+/// invoked directly instead of through `sh -c`, so a drag can never leave half
+/// a command running and the mute step can never be reordered after the write.
+///
+/// Raising the volume lifts a mute as well: `wpctl` keeps the mute flag across
+/// `set-volume`, which is why the slider used to move while the machine stayed
+/// silent and the next poll put "Muted" back on the bar.
+pub fn set_volume(level: f32) -> bool {
+    let level = if level.is_finite() { level } else { return false };
     let level = level.clamp(0.0, VOLUME_MAX);
     let pct = format!("{}%", (level * 100.0).round() as i32);
-    // Raising the volume has to lift a mute as well: wpctl keeps the mute flag
-    // across set-volume, so the slider moved while the machine stayed silent and
-    // the next poll put "Muted" back on the bar. Both steps run in one shell so
-    // they cannot be reordered.
-    let command = if level > 0.0 {
-        format!(
-            "wpctl set-volume --limit 1.6 @DEFAULT_AUDIO_SINK@ {pct} && \
-             wpctl set-mute @DEFAULT_AUDIO_SINK@ 0"
-        )
-    } else {
-        format!("wpctl set-volume --limit 1.6 @DEFAULT_AUDIO_SINK@ {pct}")
-    };
-    spawn("sh", &["-c", command.as_str()]);
+    let ok = Command::new("wpctl")
+        .args(["set-volume", "--limit", "1.6", SINK, &pct])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if ok && level > 0.0 {
+        let _ = Command::new("wpctl")
+            .args(["set-mute", SINK, "0"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    ok
 }
 
 pub fn set_muted(muted: bool) {
@@ -373,6 +449,14 @@ pub fn set_muted(muted: bool) {
 /// Shared helper for the media keys: one implementation for the keyboard, the
 /// bar and the settings window, with on-screen feedback.
 pub fn control(args: &[&str]) {
+    // The helper lives in /usr/lib/refurb, which is not on PATH for a session
+    // started by labwc. Looking for the bare name always failed, so the shell
+    // fell back to a bare `wpctl` that ignores the 160% ceiling and the OSD.
+    const HELPER: &str = "/usr/lib/refurb/refurb-control";
+    if Path::new(HELPER).is_file() {
+        spawn(HELPER, args);
+        return;
+    }
     if have("refurb-control") {
         spawn("refurb-control", args);
         return;
@@ -416,50 +500,129 @@ pub fn ac_online() -> bool {
     false
 }
 
-fn backlight() -> Option<String> {
-    let dir = std::fs::read_dir("/sys/class/backlight").ok()?;
+/// One backlight the kernel registered, as it really is on this machine.
+///
+/// A laptop commonly has two (`intel_backlight` or `amdgpu_bl0` for the panel
+/// and `acpi_video0`, a firmware stub). They are not interchangeable: writing
+/// to the stub changes a value and nothing else. The device is therefore
+/// described, not just found.
+#[derive(Clone, Debug)]
+pub struct Backlight {
+    pub name: String,
+    pub dir: String,
+    pub max: f32,
+    pub current: f32,
+    pub writable: bool,
+}
+
+fn sysfs_u32(path: &str) -> Option<f32> {
+    read_trim(path)?.parse::<f32>().ok().filter(|v| v.is_finite())
+}
+
+/// Every backlight the kernel exposes, best candidate first.
+pub fn backlights() -> Vec<Backlight> {
+    let Ok(dir) = std::fs::read_dir("/sys/class/backlight") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
     for entry in dir.flatten() {
-        let p = entry.path();
-        if p.join("brightness").is_file() {
-            return Some(p.display().to_string());
+        let path = entry.path();
+        let dir = path.display().to_string();
+        let Some(max) = sysfs_u32(&format!("{dir}/max_brightness")) else {
+            continue;
+        };
+        if max <= 0.0 {
+            continue;
         }
+        let Some(current) = sysfs_u32(&format!("{dir}/brightness")) else {
+            continue;
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Writability is what matters, not existence: without a udev rule or a
+        // privileged helper the node is root-only and every write silently
+        // fails, which used to leave a slider that moved and did nothing.
+        let writable = std::fs::OpenOptions::new()
+            .write(true)
+            .open(format!("{dir}/brightness"))
+            .is_ok();
+        out.push(Backlight {
+            name,
+            dir,
+            max,
+            current,
+            writable,
+        });
     }
-    None
+    out.sort_by_key(|b| rank(&b.name));
+    out
+}
+
+/// Real panel backlights before firmware stubs.
+fn rank(name: &str) -> u8 {
+    if name.contains("acpi_video") {
+        2
+    } else if name.contains("backlight") || name.contains("bl") {
+        0
+    } else {
+        1
+    }
 }
 
 pub fn brightness() -> Option<f32> {
-    let p = backlight()?;
-    let cur: f32 = read_trim(&format!("{p}/brightness"))?.parse().ok()?;
-    let max: f32 = read_trim(&format!("{p}/max_brightness"))?.parse().ok()?;
-    if max <= 0.0 {
-        return None;
-    }
-    Some((cur / max).clamp(0.01, 1.0))
+    let device = backlights().into_iter().next()?;
+    Some((device.current / device.max).clamp(0.01, 1.0))
 }
 
-pub fn set_brightness(level: f32) {
+/// True only when this machine has a backlight something can actually change.
+/// The quick panel and the Settings window use this to decide whether to show
+/// a brightness control at all: a control that cannot work is worse than none.
+pub fn brightness_available() -> bool {
+    let devices = backlights();
+    devices.iter().any(|b| b.writable) || (!devices.is_empty() && have("brightnessctl"))
+}
+
+/// Change the panel brightness and report what the hardware actually did.
+///
+/// Runs on a worker thread. It never panics, never divides by zero and never
+/// claims success: the value is read back from the device, so the slider can
+/// show the real level instead of the position it was dragged to.
+pub fn set_brightness(level: f32) -> Result<f32, String> {
+    if !level.is_finite() {
+        return Err("invalid brightness value".into());
+    }
     // Never fully dark: a backlight at zero looks like a dead machine.
     let level = level.clamp(0.02, 1.0);
+    let devices = backlights();
+    if devices.is_empty() {
+        return Err("no backlight device".into());
+    }
+    // sysfs first: it is the kernel's own interface and needs no helper. The
+    // udev rule makes the node writable for the desktop user.
+    for device in devices.iter().filter(|d| d.writable) {
+        let raw = ((level * device.max).round() as i64).clamp(1, device.max as i64);
+        if std::fs::write(format!("{}/brightness", device.dir), format!("{raw}\n")).is_ok() {
+            if let Some(actual) = brightness() {
+                return Ok(actual);
+            }
+            return Ok(level);
+        }
+    }
+    // A helper may still work (setuid, or a udev rule that only tags the node).
     if have("brightnessctl") {
         let pct = format!("{}%", (level * 100.0).round() as i32);
-        spawn("brightnessctl", &["-q", "set", &pct]);
-        return;
+        let ok = Command::new("brightnessctl")
+            .args(["-q", "set", &pct])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if ok {
+            return Ok(brightness().unwrap_or(level));
+        }
     }
-    // No helper installed: write the sysfs node, which the udev rule makes
-    // writable for the desktop user. Without this the slider did nothing at all
-    // on an image that lacked brightnessctl.
-    let Some(dir) = backlight() else {
-        return;
-    };
-    let Some(max) = read_trim(&format!("{dir}/max_brightness")).and_then(|v| v.parse::<f32>().ok())
-    else {
-        return;
-    };
-    if max <= 0.0 {
-        return;
-    }
-    let raw = (level * max).round().max(1.0) as u64;
-    let _ = std::fs::write(format!("{dir}/brightness"), format!("{raw}\n"));
+    Err("the backlight is not writable by this user".into())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

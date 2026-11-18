@@ -1,0 +1,18 @@
+// Refurbished Linux runs a single desktop user on a machine with no
+// administrator present. Every NetworkManager write (connect to a Wi-Fi
+// network, turn the radio off, forget a network) and every BlueZ write
+// (power the adapter on or off, pair) is a polkit action, and Debian's default
+// policy asks for an administrator password. There is no authentication agent
+// in this session, so the request was simply refused and the shell could only
+// report "Not authorized to control networking" after the password had already
+// been typed.
+//
+// Membership in netdev is granted to the desktop account by the image build,
+// so the same person who can already read the Wi-Fi state can change it.
+polkit.addRule(function (action, subject) {
+    var network = action.id.indexOf("org.freedesktop.NetworkManager.") === 0;
+    var bluetooth = action.id.indexOf("org.bluez.") === 0;
+    if (subject.isInGroup("netdev") && (network || bluetooth)) {
+        return polkit.Result.YES;
+    }
+});

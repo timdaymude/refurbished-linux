@@ -9,6 +9,13 @@ systemd-sysv
 systemd-zram-generator
 udev
 dbus
+# The polkit daemon. Only the client libraries were installed before, so every
+# privileged D-Bus action was refused: NetworkManager answered the "connect to
+# this Wi-Fi network" request with 'Not authorized to control networking'
+# whatever the password, and udisks2 could not mount a drive. The default policy
+# asks for an administrator password, so this image also ships a rule that lets
+# the desktop account (group netdev) do those things without a prompt.
+polkitd
 sudo
 network-manager
 # Wi-Fi scanning and WPA/WPA2/WPA3 association. NetworkManager calls

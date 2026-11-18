@@ -5,6 +5,11 @@
 # mute and brightness behave the same wherever they are changed. It also feeds
 # the on-screen display (wob) so a key press gives visible feedback.
 #
+# Every operation checks what the hardware did afterwards. A control that
+# reports success while nothing changed is worse than one that fails loudly,
+# because the next status poll then "corrects" the interface and the control
+# looks broken.
+#
 #   refurb-control volume up|down
 #   refurb-control mute
 #   refurb-control brightness up|down
@@ -26,9 +31,16 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 # wob reads one percentage per line from its fifo. Silent no-op when the OSD is
 # not running (text console, or the session is still starting).
+#
+# The write is non-blocking on purpose: if the OSD is not reading, the key press
+# must still change the volume instead of hanging here.
 osd() {
     [ -p "$FIFO" ] || return 0
-    printf '%s\n' "$1" > "$FIFO" 2>/dev/null || true
+    if have timeout; then
+        timeout 1 sh -c "printf '%s\n' \"\$1\" > \"\$2\"" sh "$1" "$FIFO" 2>/dev/null || true
+    else
+        printf '%s\n' "$1" > "$FIFO" 2>/dev/null || true
+    fi
 }
 
 wp() {
@@ -49,7 +61,8 @@ sink_state() {
 show_volume() {
     # shellcheck disable=SC2046
     set -- $(sink_state)
-    level=$1 muted=$2
+    level=$1
+    muted=$2
     if [ "$muted" = 1 ] || [ "${level%%.*}" = 0 ]; then
         osd 0
         return
@@ -60,27 +73,137 @@ show_volume() {
     osd "$pct"
 }
 
-show_brightness() {
+# Pick the backlight that actually drives the panel. A laptop often exposes a
+# firmware stub (acpi_video0) next to the real GPU backlight; writing the stub
+# changes a number and leaves the screen alone.
+backlight_dirs() {
+    # Real devices first, stubs last, so callers can just take the first one
+    # that accepts a write.
     for d in /sys/class/backlight/*; do
+        [ -e "$d/brightness" ] || continue
+        case $d in
+        *acpi_video*) continue ;;
+        esac
+        printf '%s\n' "$d"
+    done
+    for d in /sys/class/backlight/*; do
+        [ -e "$d/brightness" ] || continue
+        case $d in
+        *acpi_video*) printf '%s\n' "$d" ;;
+        esac
+    done
+}
+
+show_brightness() {
+    while IFS= read -r d; do
         [ -r "$d/brightness" ] || continue
         cur=$(cat "$d/brightness" 2>/dev/null) || continue
         max=$(cat "$d/max_brightness" 2>/dev/null) || continue
         [ "${max:-0}" -gt 0 ] || continue
         osd $((cur * 100 / max))
-        return
-    done
+        return 0
+    done <<EOF
+$(backlight_dirs)
+EOF
+    return 1
+}
+
+# -> "<current> <max>" of the first readable device, or nothing
+backlight_level() {
+    while IFS= read -r d; do
+        [ -r "$d/brightness" ] || continue
+        cur=$(cat "$d/brightness" 2>/dev/null) || continue
+        max=$(cat "$d/max_brightness" 2>/dev/null) || continue
+        [ "${max:-0}" -gt 0 ] || continue
+        printf '%s %s\n' "$cur" "$max"
+        return 0
+    done <<EOF
+$(backlight_dirs)
+EOF
+    return 1
+}
+
+brightness_sysfs() {
+    direction=$1
+    while IFS= read -r d; do
+        [ -w "$d/brightness" ] || continue
+        cur=$(cat "$d/brightness" 2>/dev/null) || continue
+        max=$(cat "$d/max_brightness" 2>/dev/null) || continue
+        [ "${max:-0}" -gt 0 ] || continue
+        step=$((max / 10))
+        [ "$step" -gt 0 ] || step=1
+        if [ "$direction" = up ]; then
+            val=$((cur + step))
+        else
+            val=$((cur - step))
+        fi
+        [ "$val" -gt "$max" ] && val=$max
+        [ "$val" -lt 1 ] && val=1
+        printf '%s\n' "$val" > "$d/brightness" 2>/dev/null || continue
+        after=$(cat "$d/brightness" 2>/dev/null) || continue
+        if [ "$after" != "$cur" ]; then
+            show_brightness
+            return 0
+        fi
+    done <<EOF
+$(backlight_dirs)
+EOF
+    return 1
+}
+
+brightness() {
+    case ${1:-} in
+    up | down) direction=$1 ;;
+    *)
+        echo "usage: refurb-control brightness up|down" >&2
+        return 2
+        ;;
+    esac
+
+    # sysfs first: it is the kernel's own interface, needs no extra process and
+    # is writable through the udev rule.
+    brightness_sysfs "$direction" && return 0
+
+    if have brightnessctl; then
+        # brightnessctl exits 0 on laptops whose ACPI interface ignores the
+        # request, and the device may be readable while its value never moves.
+        # Compare the hardware before and after instead of trusting the tool.
+        before=$(backlight_level) || before=
+        case $direction in
+        up) brightnessctl -q set 10%+ || true ;;
+        down) brightnessctl -q set 10%- || true ;;
+        esac
+        after=$(backlight_level) || after=
+        if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
+            show_brightness
+            return 0
+        fi
+    fi
+
+    echo "refurb-control: no writable backlight device; brightness unchanged" >&2
+    return 1
 }
 
 volume() {
+    if ! have wpctl; then
+        echo "refurb-control: wpctl is missing; install pipewire" >&2
+        return 1
+    fi
     case ${1:-} in
     up)
-        wp set-volume --limit "$MAX" "$SINK" "${STEP}%+" || return 1
+        wp set-volume --limit "$MAX" "$SINK" "${STEP}%+" || {
+            echo "refurb-control: the audio sink refused the volume change" >&2
+            return 1
+        }
         # Raising the volume while muted should be audible again, as it is on
         # every other desktop.
         wp set-mute "$SINK" 0
         ;;
     down)
-        wp set-volume "$SINK" "${STEP}%-" || return 1
+        wp set-volume "$SINK" "${STEP}%-" || {
+            echo "refurb-control: the audio sink refused the volume change" >&2
+            return 1
+        }
         ;;
     *)
         echo "usage: refurb-control volume up|down" >&2
@@ -91,49 +214,12 @@ volume() {
 }
 
 mute() {
+    if ! have wpctl; then
+        echo "refurb-control: wpctl is missing; install pipewire" >&2
+        return 1
+    fi
     wp set-mute "$SINK" toggle || return 1
     show_volume
-}
-
-brightness() {
-    case ${1:-} in
-    up|down) ;;
-    *)
-        echo "usage: refurb-control brightness up|down" >&2
-        return 2
-        ;;
-    esac
-    if have brightnessctl; then
-        case $1 in
-        up) brightnessctl -q set 10%+ || return 1 ;;
-        down) brightnessctl -q set 10%- || return 1 ;;
-        esac
-        show_brightness
-        return 0
-    fi
-    # No helper installed: drive the sysfs node directly. The udev rule makes it
-    # writable for the desktop user, so the keys keep working on a minimal image.
-    for d in /sys/class/backlight/*; do
-        [ -w "$d/brightness" ] || continue
-        cur=$(cat "$d/brightness" 2>/dev/null) || continue
-        max=$(cat "$d/max_brightness" 2>/dev/null) || continue
-        [ "${max:-0}" -gt 0 ] || continue
-        step=$((max / 10))
-        [ "$step" -gt 0 ] || step=1
-        if [ "$1" = up ]; then
-            val=$((cur + step))
-        else
-            val=$((cur - step))
-        fi
-        [ "$val" -gt "$max" ] && val=$max
-        [ "$val" -lt 1 ] && val=1
-        printf '%s\n' "$val" > "$d/brightness" 2>/dev/null || return 1
-        show_brightness
-        return 0
-    done
-    # No backlight at all (desktop machine, VM): the key is a silent no-op
-    # rather than a fake success.
-    return 1
 }
 
 case ${1:-} in

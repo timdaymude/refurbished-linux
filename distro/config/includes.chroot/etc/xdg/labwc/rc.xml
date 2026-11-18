@@ -71,6 +71,11 @@
     <keybind key="A-F4">
       <action name="Close" />
     </keybind>
+    <!-- Support: collect the hardware and session diagnostics in a terminal.
+         Nothing is uploaded; the archive is written under $HOME. -->
+    <keybind key="W-d">
+      <action name="Execute"><command>foot -e sh -c 'refurb-diag; printf "\nPress Enter to close "; read -r _'</command></action>
+    </keybind>
     <keybind key="Print">
       <action name="Execute"><command>sh -c 'mkdir -p "$HOME/Pictures" &amp;&amp; grim "$HOME/Pictures/screenshot-$(date +%F-%H%M%S).png"'</command></action>
     </keybind>

@@ -49,9 +49,15 @@ for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
                /usr/lib/refurb/session-launch /usr/lib/refurb/refurb-control \
                /usr/lib/refurb/osd-start \
+               /usr/lib/refurb/refurb-diag \
                /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
 done
+# One name for the hardware controls, callable from a terminal and from the
+# diagnostics script. The labwc keybinds use the absolute path, but a user who
+# types `refurb-control volume up` should not have to know where it lives.
+ln -sf /usr/lib/refurb/refurb-control /usr/local/bin/refurb-control
+
 chmod 0440 /etc/sudoers.d/refurb-helpers
 
 # The live medium needs a real human account: the desktop session runs as it,

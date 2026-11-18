@@ -290,8 +290,14 @@ pub fn slider(
     _kind: super::SliderKind,
     action_for: impl Fn(f32) -> Action,
 ) -> Rect {
+    let value = if value.is_finite() { value.clamp(0.0, 1.0) } else { 0.0 };
     let icon_box = render::rect(r.x(), r.y() + (r.height() - 18.0) / 2.0, 18.0, 18.0);
     cx.glyph(glyph, icon_box, theme::ink_soft(), 1.9);
+    // A resting slider and a slider under the pointer should not look alike:
+    // the row highlights so it is obvious that the whole height is clickable.
+    if cx.hot(r) {
+        render::round(cx.pm, r, theme::RADIUS_SM, theme::line_soft());
+    }
     let track = render::rect(r.x() + 30.0, r.y() + r.height() / 2.0 - 3.0, r.width() - 30.0, 6.0);
     render::round(cx.pm, track, 3.0, theme::well());
     let filled = (track.width() * value.clamp(0.0, 1.0)).max(0.0);
@@ -302,8 +308,8 @@ pub fn slider(
         theme::accent(),
     );
     let knob_x = track.x() + filled;
-    render::circle(cx.pm, knob_x, track.y() + 3.0, 7.5, theme::card());
-    render::circle_stroke(cx.pm, knob_x, track.y() + 3.0, 7.5, theme::accent(), 1.6);
+    render::circle(cx.pm, knob_x, track.y() + 3.0, 8.5, theme::card());
+    render::circle_stroke(cx.pm, knob_x, track.y() + 3.0, 8.5, theme::accent(), 1.8);
     // The whole row is clickable, not just the 6px track. A hit area the height
     // of a hairline made the slider feel dead unless the pointer was exactly on
     // the line. The session still converts x within `track` to a value.

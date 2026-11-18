@@ -60,7 +60,18 @@ impl Keymap {
     }
 
     /// Build from the keymap string delivered by `wl_keyboard.keymap`.
+    ///
+    /// `wl_keyboard.keymap` describes a NUL-terminated string and counts the
+    /// terminator in its size, so the text read from the file descriptor ends
+    /// with a `\0`. Passing that to `CString::new` fails, which made every
+    /// load return `None`: the shell then silently used its built-in US layout
+    /// on every machine, so characters from any other layout (and every AltGr
+    /// character) could not be typed into a password field.
     pub fn from_keymap_string(text: &str) -> Self {
+        let text = match text.find('\0') {
+            Some(end) => &text[..end],
+            None => text,
+        };
         Self {
             api: load_xkb(text),
         }

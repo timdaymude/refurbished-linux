@@ -146,6 +146,12 @@ enum Msg {
     Log(String),
     Updates(Result<(u32, u32), String>),
     Displays(Vec<ui::DisplayOutput>),
+    /// A machine status snapshot, gathered on a worker thread.
+    Status(Box<ui::Status>),
+    /// The sink accepted (or refused) the level the user asked for.
+    VolumeApplied(bool),
+    /// The backlight's real level after the change, or why it did not change.
+    BrightnessApplied(Result<f32, String>),
 }
 
 pub struct Session {
@@ -176,11 +182,27 @@ pub struct Session {
     search_due: Option<Instant>,
     last_tick: Instant,
     last_status: Instant,
+    /// Surfaces whose contents changed and that still need a frame. Painting is
+    /// coalesced, so a burst of pointer events costs one frame, not one frame
+    /// per event. Redrawing a full-screen wallpaper on every motion event is
+    /// what made the desktop feel sluggish on a 2 GB machine.
+    dirty: Vec<Surface>,
+    last_paint: Instant,
+    /// When the user last moved the volume or brightness slider. A status poll
+    /// that lands just after must not snap the control back.
+    controls_touched: Option<Instant>,
+    /// Whether the quick panel currently holds the keyboard focus.
+    quick_keys: bool,
+    /// Hardware writes are coalesced on these worker threads: a drag produces
+    /// hundreds of positions but only the newest one is worth applying.
+    volume_tx: Sender<f32>,
+    brightness_tx: Sender<f32>,
     ipc: Option<UnixListener>,
     exit: bool,
 }
 
 pub fn run() -> Result<(), String> {
+    install_panic_log();
     let conn = Connection::connect_to_env()
         .map_err(|e| format!("cannot connect to a Wayland compositor: {e}"))?;
     let (globals, mut queue) =
@@ -226,6 +248,7 @@ pub fn run() -> Result<(), String> {
     };
 
     let (tx, rx) = mpsc::channel();
+    let (volume_tx, brightness_tx) = start_control_workers(&tx);
     let now = Instant::now();
     let bar_bottom = std::env::var("REFURB_BAR_POSITION")
         .map(|value| value.trim().eq_ignore_ascii_case("bottom"))
@@ -255,6 +278,12 @@ pub fn run() -> Result<(), String> {
         search_due: None,
         last_tick: now,
         last_status: now,
+        dirty: Vec::new(),
+        last_paint: now - Duration::from_millis(20),
+        controls_touched: None,
+        quick_keys: false,
+        volume_tx,
+        brightness_tx,
         ipc: start_ipc(),
         exit: false,
     };
@@ -342,6 +371,7 @@ impl Session {
         );
         let mut width = 0u32;
         let mut height = BAR_HEIGHT;
+        let mut exclusive_keys = false;
         match id {
             Surface::Desktop | Surface::DesktopOn(_) => {
                 width = 0;
@@ -411,13 +441,23 @@ impl Session {
                 }
                 surface.set_size(width, height);
                 surface.set_exclusive_zone(0);
-                surface.set_keyboard_interactivity(
-                    zwlr_layer_surface_v1::KeyboardInteractivity::None,
-                );
+                // The panel only takes the keyboard while it is asking for a
+                // password. With `None` the compositor never gives it focus,
+                // which is why the Wi-Fi password field could not be typed
+                // into at all: the keys went to whatever window had focus.
+                exclusive_keys = self.editing_secret();
+                surface.set_keyboard_interactivity(if exclusive_keys {
+                    zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive
+                } else {
+                    zwlr_layer_surface_v1::KeyboardInteractivity::None
+                });
             }
             _ => return,
         }
         wl.commit();
+        if matches!(id, Surface::Quick) {
+            self.quick_keys = exclusive_keys;
+        }
         self.note(format!("open {id:?} size {width}x{height}"));
         self.surfaces.push(SurfaceEntry {
             id,
@@ -499,11 +539,28 @@ impl Session {
                         self.surfaces[idx].height = height;
                         self.surfaces[idx].configured = false;
                     }
+                    // Take the keyboard when a secret is being typed and give
+                    // it straight back when the dialog closes, so typing in an
+                    // application is never swallowed by an idle panel.
+                    let want_keys = self.editing_secret();
+                    if self.quick_keys != want_keys {
+                        if let Role::Layer(surface) = &self.surfaces[idx].role {
+                            surface.set_keyboard_interactivity(if want_keys {
+                                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive
+                            } else {
+                                zwlr_layer_surface_v1::KeyboardInteractivity::None
+                            });
+                            self.surfaces[idx].wl.commit();
+                        }
+                        self.quick_keys = want_keys;
+                        self.note(format!("quick panel keyboard focus: {want_keys}"));
+                    }
                     self.redraw(Surface::Quick);
                 }
                 None => self.open_layer(Surface::Quick),
             }
         } else {
+            self.quick_keys = false;
             self.close_surface(Surface::Quick);
         }
 
@@ -641,10 +698,7 @@ impl Session {
     }
 
     fn redraw_visible(&mut self) {
-        let ids: Vec<Surface> = self.surfaces.iter().map(|s| s.id).collect();
-        for id in ids {
-            self.redraw(id);
-        }
+        self.invalidate(None);
     }
 
     // -- actions ---------------------------------------------------------
@@ -665,9 +719,57 @@ impl Session {
 
     fn dispatch(&mut self, action: Action) {
         self.note(format!("dispatch {action:?}"));
-        self.on_action(action);
+        // One failed action must never take the desktop down with it: the shell
+        // owns the bar and every window, so a panic here looked like "the
+        // desktop crashed" until the supervisor restarted it.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.on_action(action.clone());
+        }));
+        if outcome.is_err() {
+            eprintln!("refurb-shell: recovered from a failed action: {action:?}");
+        }
         self.sync_panels();
-        self.redraw_visible();
+        self.invalidate(None);
+    }
+
+    /// True while the quick panel is asking for something that must be typed.
+    fn editing_secret(&self) -> bool {
+        self.app.st.quick_open && self.app.st.wifi.pending.is_some()
+    }
+
+    /// Mark a surface (or every surface) for the next frame.
+    fn invalidate(&mut self, id: Option<Surface>) {
+        match id {
+            Some(surface) => {
+                if self.entry_index(surface).is_some() && !self.dirty.contains(&surface) {
+                    self.dirty.push(surface);
+                }
+            }
+            None => {
+                for entry in &self.surfaces {
+                    if !self.dirty.contains(&entry.id) {
+                        self.dirty.push(entry.id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Paint the surfaces that changed, at most once per frame interval.
+    fn flush_dirty(&mut self) {
+        if self.dirty.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        if now.duration_since(self.last_paint) < Duration::from_millis(14) {
+            // Too soon: `poll_timeout` wakes the loop when the frame is due.
+            return;
+        }
+        self.last_paint = now;
+        let ids = std::mem::take(&mut self.dirty);
+        for id in ids {
+            self.redraw(id);
+        }
     }
 
     fn on_action(&mut self, action: Action) {
@@ -723,6 +825,9 @@ impl Session {
                     self.app.st.wifi.open = false;
                     self.app.st.bt.open = false;
                     self.app.st.wifi.pending = None;
+                    if self.app.st.focus == Focus::WifiPassword {
+                        self.app.st.focus = Focus::None;
+                    }
                 }
                 if self.app.st.quick_open {
                     self.spawn_wifi_scan();
@@ -733,6 +838,9 @@ impl Session {
                 self.app.st.wifi.open = false;
                 self.app.st.bt.open = false;
                 self.app.st.wifi.pending = None;
+                if self.app.st.focus == Focus::WifiPassword {
+                    self.app.st.focus = Focus::None;
+                }
             }
             Action::WifiList => {
                 self.app.st.quick_open = true;
@@ -744,10 +852,13 @@ impl Session {
             }
             Action::WifiPower => {
                 let on = !self.app.st.status.wifi_enabled;
-                system::set_wifi_enabled(on);
                 self.app.st.status.wifi_enabled = on;
-                std::thread::sleep(Duration::from_millis(300));
-                self.app.refresh_status();
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    system::set_wifi_enabled(on);
+                    std::thread::sleep(Duration::from_millis(400));
+                    let _ = tx.send(Msg::Status(Box::new(ui::read_status())));
+                });
             }
             Action::WifiRescan => self.spawn_wifi_scan(),
             Action::WifiPick(i) => {
@@ -774,12 +885,21 @@ impl Session {
                 }
             }
             Action::WifiPasswordChar(c) => {
-                if self.app.st.wifi.password.chars().count() < 63 {
+                // Control characters would corrupt the passphrase silently.
+                if c.is_control() {
+                    return;
+                }
+                if self.app.st.wifi.password.chars().count() < 64 {
                     self.app.st.wifi.password.push(c);
                 }
             }
             Action::WifiPasswordBackspace => {
                 self.app.st.wifi.password.pop();
+            }
+            Action::WifiPasswordFocus => {
+                if self.app.st.wifi.pending.is_some() {
+                    self.app.st.focus = Focus::WifiPassword;
+                }
             }
             Action::WifiPasswordSubmit => {
                 let Some(ssid) = self.app.st.wifi.pending.clone() else {
@@ -796,9 +916,13 @@ impl Session {
             Action::WifiForget => {}
             Action::BtPower => {
                 let on = !self.app.st.status.bt.powered;
-                system::set_bluetooth_powered(on);
-                std::thread::sleep(Duration::from_millis(250));
-                self.spawn_bt_refresh();
+                self.app.st.status.bt.powered = on;
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    system::set_bluetooth_powered(on);
+                    std::thread::sleep(Duration::from_millis(400));
+                    let _ = tx.send(Msg::Status(Box::new(ui::read_status())));
+                });
             }
             Action::BtList => {
                 self.app.st.quick_open = true;
@@ -829,22 +953,32 @@ impl Session {
                 self.spawn_bt_refresh();
             }
             Action::VolumeSet(fraction) => {
+                if !fraction.is_finite() {
+                    return;
+                }
                 // The sliders report a 0..1 position on their track; the track
                 // covers the whole 0..160% range, so the last third of it is
                 // amplification.
                 let level = fraction.clamp(0.0, 1.0) * system::VOLUME_MAX;
-                system::set_volume(level);
                 self.app.st.status.volume = level;
                 self.app.st.status.muted = false;
+                self.controls_touched = Some(Instant::now());
+                let _ = self.volume_tx.send(level);
             }
             Action::BrightnessSet(level) => {
-                system::set_brightness(level);
+                if !level.is_finite() {
+                    return;
+                }
+                let level = level.clamp(0.02, 1.0);
                 self.app.st.status.brightness = Some(level);
+                self.controls_touched = Some(Instant::now());
+                let _ = self.brightness_tx.send(level);
             }
             Action::MuteToggle => {
                 let muted = !self.app.st.status.muted;
                 system::set_muted(muted);
                 self.app.st.status.muted = muted;
+                self.controls_touched = Some(Instant::now());
             }
             Action::WindowOpen(kind) => {
                 self.app.st.window = Some(kind);
@@ -938,6 +1072,17 @@ impl Session {
     }
 
     // -- background work -------------------------------------------------
+
+    /// Read the machine on a worker thread. `nmcli` and `bluetoothctl` take
+    /// hundreds of milliseconds each; doing that on the event loop froze the
+    /// whole interface every 30 seconds.
+    fn spawn_status_refresh(&mut self) {
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let status = ui::read_status();
+            let _ = tx.send(Msg::Status(Box::new(status)));
+        });
+    }
 
     fn spawn_wifi_scan(&mut self) {
         self.app.st.wifi.scanning = true;
@@ -1067,9 +1212,15 @@ impl Session {
                     self.app.st.wifi.password.clear();
                     self.app.st.wifi.error = None;
                     self.app.st.wifi.open = false;
-                    self.app.refresh_status();
+                    self.app.st.focus = Focus::None;
+                    self.spawn_status_refresh();
                 }
-                Err(error) => self.app.st.wifi.error = Some(error),
+                Err(error) => {
+                    // Keep the dialog open, keep the focus and keep what was
+                    // typed: a typo must be correctable, not a dead end.
+                    self.app.st.wifi.error = Some(error);
+                    self.app.st.focus = Focus::WifiPassword;
+                }
             },
             Msg::Bluetooth(devices) => {
                 self.app.st.bt.devices = devices;
@@ -1104,7 +1255,7 @@ impl Session {
                     self.app.st.updates_note.push(format!(
                         "{upgrades} package updates available ({security} security)."
                     ));
-                    self.app.refresh_status();
+                    self.spawn_status_refresh();
                 }
                 Err(error) => self.app.st.updates_note.push(error),
             },
@@ -1112,6 +1263,35 @@ impl Session {
                 self.app.st.display.outputs = displays;
                 self.app.st.display.selected = 0;
             }
+            Msg::Status(status) => {
+                // A poll that lands while a slider is being dragged must not
+                // pull the control back to a level the user has already left.
+                let keep = self.drag.is_some()
+                    || self
+                        .controls_touched
+                        .map(|when| when.elapsed() < Duration::from_millis(1500))
+                        .unwrap_or(false);
+                self.app.apply_status(*status, keep);
+            }
+            Msg::VolumeApplied(ok) => {
+                if !ok {
+                    self.note("the audio sink refused the new volume");
+                }
+            }
+            Msg::BrightnessApplied(result) => match result {
+                Ok(actual) => {
+                    // Show what the hardware did, not what was requested.
+                    if self.drag.is_none() {
+                        self.app.st.status.brightness = Some(actual);
+                        self.app.st.status.backlight = true;
+                    }
+                }
+                Err(error) => {
+                    // Never leave a control that lies about the panel.
+                    eprintln!("refurb-shell: brightness: {error}");
+                    self.app.st.status.backlight = false;
+                }
+            },
         }
         self.sync_panels();
         self.redraw_visible();
@@ -1128,6 +1308,8 @@ impl Session {
                 Key::Escape => {
                     self.app.st.wifi.pending = None;
                     self.app.st.wifi.password.clear();
+                    self.app.st.focus = Focus::None;
+                    self.sync_panels();
                     self.redraw(Surface::Quick);
                 }
                 _ => {}
@@ -1244,7 +1426,12 @@ impl Session {
         }
         self.app.st.hover = Some((position.0 as f32, position.1 as f32));
         if let Some(surface) = self.pointer_focus {
-            self.redraw(surface);
+            // The wallpaper has nothing to hover. Repainting a full-screen
+            // surface for every motion event is pure CPU burn on the machines
+            // this image targets, and it made open applications feel slow.
+            if !matches!(surface, Surface::Desktop | Surface::DesktopOn(_)) {
+                self.invalidate(Some(surface));
+            }
         }
     }
 
@@ -1316,8 +1503,7 @@ impl Session {
         }
         if now.duration_since(self.last_status) >= Duration::from_secs(30) {
             self.last_status = now;
-            self.app.refresh_status();
-            self.redraw_visible();
+            self.spawn_status_refresh();
         }
         if let Some(due) = self.search_due {
             if now >= due {
@@ -1336,6 +1522,11 @@ impl Session {
             let until = due.saturating_duration_since(now);
             wait = wait.min(until);
         }
+        if !self.dirty.is_empty() {
+            // A frame is owed: wake up when the frame interval has elapsed.
+            let due = self.last_paint + Duration::from_millis(14);
+            wait = wait.min(due.saturating_duration_since(now));
+        }
         wait.as_millis().min(1000) as c_int
     }
 
@@ -1343,6 +1534,7 @@ impl Session {
         let raw = self.conn_fd();
         loop {
             self.pump();
+            self.flush_dirty();
             if self.exit {
                 break;
             }
@@ -1384,6 +1576,52 @@ impl Session {
         // The Wayland socket; kept as a raw descriptor for poll(2).
         self.conn.backend().poll_fd().as_raw_fd()
     }
+}
+
+/// Record a panic where the session log can see it. The supervisor already
+/// captures stderr; without this a crash inside the shell only looked like
+/// "the desktop disappeared and came back".
+fn install_panic_log() {
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        eprintln!("refurb-shell: panic: {info}\n{backtrace}");
+    }));
+}
+
+/// Hardware controls run on their own threads, one value at a time.
+///
+/// A slider drag produces a position for every pointer motion event. Applying
+/// each one launched a process, so the writes raced, arrived out of order and
+/// the sink often ended on an older value than the one under the pointer. The
+/// workers below keep only the newest requested value, so the UI stays
+/// instant and the hardware ends exactly where the user let go.
+fn start_control_workers(tx: &Sender<Msg>) -> (Sender<f32>, Sender<f32>) {
+    let (volume_tx, volume_rx) = mpsc::channel::<f32>();
+    let volume_msgs = tx.clone();
+    std::thread::spawn(move || {
+        while let Ok(mut level) = volume_rx.recv() {
+            while let Ok(newer) = volume_rx.try_recv() {
+                level = newer;
+            }
+            let ok = std::panic::catch_unwind(|| system::set_volume(level)).unwrap_or(false);
+            let _ = volume_msgs.send(Msg::VolumeApplied(ok));
+        }
+    });
+
+    let (brightness_tx, brightness_rx) = mpsc::channel::<f32>();
+    let brightness_msgs = tx.clone();
+    std::thread::spawn(move || {
+        while let Ok(mut level) = brightness_rx.recv() {
+            while let Ok(newer) = brightness_rx.try_recv() {
+                level = newer;
+            }
+            let result = std::panic::catch_unwind(|| system::set_brightness(level))
+                .unwrap_or_else(|_| Err("the brightness change failed".to_string()));
+            let _ = brightness_msgs.send(Msg::BrightnessApplied(result));
+        }
+    });
+
+    (volume_tx, brightness_tx)
 }
 
 fn surface_for(kind: WindowKind) -> Surface {

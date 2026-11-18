@@ -35,5 +35,9 @@ path = "src/main.rs"
 opt-level = "s"
 lto = true
 codegen-units = 1
-panic = "abort"
+# Deliberately unwind, not abort. The shell owns the bar and every window, so
+# one panic in a drawing or hardware path used to kill the whole desktop. With
+# unwinding, `catch_unwind` in the session can report the failure and keep the
+# session alive, which is what "a control must not crash the desktop" needs.
+panic = "unwind"
 strip = true

@@ -222,6 +222,45 @@ stage_configure() {
 # --------------------------------------------------------------- squashfs ---
 stage_squashfs() {
     say "squashfs"
+
+    # Directory modes must not depend on the machine that assembled the tree.
+    # An archive restore, a restrictive umask or a copied includes/ directory
+    # can leave /etc and /usr at 0700, and then the finished image cannot even
+    # log the user in:
+    #   -- refurb: no shell: Permission denied
+    # The file modes are unaffected, so only the directories are normalised here,
+    # and the few that are private on purpose are put back explicitly.
+    find "$ROOTFS" -xdev -type d -exec chmod 0755 {} +
+    # The session helpers are shell scripts, not data: a copy or an archive
+    # restore that loses the executable bit turns them into files that can only
+    # fail ("bash: /usr/lib/refurb/refurb-diag: Permission denied").
+    find "$ROOTFS/usr/lib/refurb" -maxdepth 1 -type f -exec chmod 0755 {} +
+    for d in root home etc/ssl/private; do
+        [ -d "$ROOTFS/$d" ] && chmod 0700 "$ROOTFS/$d"
+    done
+    for d in "$ROOTFS"/home/*; do
+        [ -d "$d" ] && chmod 0700 "$d"
+    done
+    [ -d "$ROOTFS/tmp" ] && chmod 1777 "$ROOTFS/tmp"
+    [ -d "$ROOTFS/var/tmp" ] && chmod 1777 "$ROOTFS/var/tmp"
+    [ -d "$ROOTFS/var/spool/cron/crontabs" ] && chmod 1730 "$ROOTFS/var/spool/cron/crontabs"
+    [ -d "$ROOTFS/etc/polkit-1/rules.d" ] && chmod 0755 "$ROOTFS/etc/polkit-1/rules.d"
+
+    # Restore the setuid bits the packages ask for. A filesystem assembled from
+    # an extracted squashfs (or extracted without privileges) has them cleared,
+    # and then sudo refuses to run at all:
+    #   sudo: /usr/bin/sudo must be owned by uid 0 and have the setuid bit set
+    # which leaves the machine with no way to perform an administrative task.
+    for f in usr/bin/sudo usr/bin/su usr/bin/passwd usr/bin/chsh usr/bin/chfn \
+             usr/bin/newgrp usr/bin/gpasswd usr/bin/mount usr/bin/umount \
+             usr/bin/pkexec; do
+        [ -e "$ROOTFS/$f" ] && chmod 4755 "$ROOTFS/$f"
+    done
+    for f in usr/sbin/unix_chkpwd usr/lib/dbus-1.0/dbus-daemon-launch-helper \
+             usr/lib/openssh/ssh-keysign; do
+        [ -e "$ROOTFS/$f" ] && chmod 2755 "$ROOTFS/$f"
+    done
+
     install -d "$ISODIR/live"
     cp "$ROOTFS/boot/vmlinuz-"* "$ISODIR/live/vmlinuz"
     cp "$ROOTFS/boot/initrd.img-"* "$ISODIR/live/initrd.img"

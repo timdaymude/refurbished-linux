@@ -52,7 +52,9 @@ impl Block {
 
 fn plan(st: &super::State) -> Vec<Block> {
     let mut out = vec![Block::Header, Block::Toggles, Block::Volume];
-    if st.status.brightness.is_some() {
+    // Only offer brightness when a writable backlight exists. A control that
+    // cannot change anything is worse than no control at all.
+    if st.status.backlight && st.status.brightness.is_some() {
         out.push(Block::Brightness);
     }
     if st.wifi.open {
@@ -292,21 +294,35 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                         theme::ink_soft(),
                     );
                     let field = render::rect(inner.x(), py + 20.0, inner.width() - 84.0, 28.0);
+                    let editing = st.focus == super::Focus::WifiPassword;
                     render::round(cx.pm, field, theme::RADIUS_SM, theme::well());
-                    render::round_stroke(cx.pm, field, theme::RADIUS_SM, theme::accent(), 1.0);
-                    let dots = "•".repeat(st.wifi.password.chars().count());
-                    if dots.is_empty() {
+                    render::round_stroke(
+                        cx.pm,
+                        field,
+                        theme::RADIUS_SM,
+                        if editing { theme::accent() } else { theme::line() },
+                        if editing { 1.6 } else { 1.0 },
+                    );
+                    let count = st.wifi.password.chars().count();
+                    if count == 0 {
                         cx.t(
                             field.x() + 9.0,
                             field.y(),
                             field.height(),
-                            "Network password",
+                            if editing {
+                                "Type the network password"
+                            } else {
+                                "Click to type the password"
+                            },
                             theme::T_BODY,
                             REGULAR,
                             theme::ink_faint(),
                         );
                     } else {
-                        cx.t(
+                        // Long passphrases are truncated rather than allowed to
+                        // run out of the field.
+                        let dots: String = "•".repeat(count.min(32));
+                        let w = cx.t(
                             field.x() + 9.0,
                             field.y(),
                             field.height(),
@@ -315,7 +331,22 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                             MEDIUM,
                             theme::ink(),
                         );
+                        if editing {
+                            render::fill(
+                                cx.pm,
+                                render::rect(
+                                    field.x() + 14.0 + w,
+                                    field.y() + field.height() * 0.25,
+                                    1.5,
+                                    field.height() * 0.5,
+                                ),
+                                theme::accent(),
+                            );
+                        }
                     }
+                    // The field itself is clickable, so it can be re-focused
+                    // after the pointer went elsewhere.
+                    cx.hit(field, Action::WifiPasswordFocus);
                     widgets::button(
                         cx,
                         render::rect(field.right() + 6.0, py + 20.0, 78.0, 28.0),

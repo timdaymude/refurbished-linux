@@ -1,0 +1,42 @@
+Refurbished Linux 0.3.0-r6 — hardware: Wi-Fi password, polkit, brightness, volume
+
+file:   refurbished-linux-0.3.0-amd64.iso
+size:   824180736 bytes
+sha256: 5cdce8ee0e9dfba8d4f1ec6324887504c3d50822fb9318605bdf481c9bbe2e7e
+
+Root causes found in the running system:
+  - no network write could succeed at all: the image shipped only polkit's
+    client libraries, not polkitd, so NetworkManager refused every
+    connection-add-activate with "Not authorized to control networking."
+    polkitd (with its setuid helper and unit) and a netdev rule now ship
+  - the Wi-Fi panel is a wlr-layer-shell surface created with keyboard
+    interactivity None and never changed, so the password field could not
+    receive a keystroke; it now takes the keyboard (Exclusive) only while
+    a password dialog is open and drops back when it closes
+  - wl_keyboard.keymap is NUL-terminated and counts the terminator, so
+    CString::new failed silently and every machine fell back to a built-in
+    US layout whatever keyboard it had; the string is trimmed first
+  - brightness writes ran synchronously on the event loop, always reported
+    success, and preferred firmware acpi_video stubs; panic = "abort" turned
+    any panic into the reported "desktop crashed and came back"
+  - every pointer move during a volume drag spawned a new wpctl process and
+    repainted every surface including the wallpaper, and the 30 s status
+    poll ran nmcli/bluetoothctl/wpctl on the event loop
+
+Verified in QEMU/OVMF from this ISO: boots to the desktop with no panic and
+no keymap warning; 11 typed characters in the Wi-Fi password field produce
+11 dots and NetworkManager stores exactly that PSK (wpa-psk/Testpass123);
+pkcheck authorizes network-control for the desktop user and the audit
+refusal is gone; a hotspot is listed as joinable rather than "Connected";
+a volume click shows 155% and wpctl get-volume reports 1.55; refurb-control
+volume/mute move the sink and return 0; a fake backlight row appears, writes,
+hides itself on failure and the shell survives; refurb-control brightness
+exits non-zero with a reason instead of claiming success; refurb-diag writes
+its archive; 16/16 unit tests pass.
+
+Not verified: a real radio associating with an access point end to end (the
+emulated AP and client share one host and NM's scan tears the AP down), real
+panel backlight writes, the media/brightness keys and Super combinations
+themselves (QEMU does not deliver those keycodes), physical keyboard layouts,
+and the brightness crash, which is addressed structurally. Details:
+docs/hardware-0.6.md

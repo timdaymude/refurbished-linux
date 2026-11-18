@@ -2,7 +2,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.2.0 “Focus”** — dark by default, with a bootable ISO.
+Version **0.3.0** (release r6) — dark by default, with a bootable ISO.
 
 Built on Debian 13 “trixie”, but not a Debian with a different wallpaper. The
 desktop is a new shell written from scratch — its own drawing code, its own
@@ -26,22 +26,38 @@ icons, its own font, its own interaction model — running on top of the tiny
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
 | `scripts/` | Build and measurement scripts. |
-| `docs/` | ISO build guide, 0.2 test report, design, memory budget, test protocol, limitations, Windows-migration notes. |
+| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), design, memory budget, test protocol, limitations, Windows-migration notes. |
 
 ## Status: read this before trusting anything
 
 **Verified**
 
-- `refurbished-linux-0.2.0-amd64.iso` builds end to end and is **810,549,248
-  bytes** with a published SHA256. It carries both a BIOS (`isolinux.bin`) and a
-  UEFI (`boot/grub/efi.img`) boot entry on an isohybrid MBR+GPT layout.
-- The ISO **boots in QEMU**: boot menu, kernel, live-boot initramfs, squashfs
-  mounted, systemd multi-user, our `/etc/issue` branding on the console,
-  Cockpit's socket listening, login prompt offered.
+- `refurbished-linux-0.3.0-amd64.iso` builds end to end and is **824,180,736
+  bytes** with a published SHA256
+  (`5cdce8ee0e9dfba8d4f1ec6324887504c3d50822fb9318605bdf481c9bbe2e7e`). It carries
+  both a BIOS (`isolinux.bin`) and a UEFI (`boot/grub/efi.img`) boot entry on
+  an isohybrid MBR+GPT layout.
+- The ISO **boots in QEMU/OVMF to the desktop from the shipped image**: the bar
+  draws, the session log contains no panic, no restart and no keymap warning.
+- **The Wi-Fi path works up to the password.** Clicking a network gives the panel
+  the keyboard, 11 typed characters produce 11 dots, and NetworkManager stores
+  exactly what was typed (`wpa-psk` / the typed password). `polkitd` and a
+  `netdev` rule ship in the image, so `pkcheck` now authorizes
+  `network-control` for the desktop user instead of the previous
+  `Not authorized to control networking.`
+- **Volume and brightness behave.** A click on the volume row shows 155% and
+  `wpctl get-volume` reports `1.55`; `refurb-control volume up|down|mute` moves
+  the sink and returns 0. Against a fake `/sys/class/backlight` the brightness
+  row appears, writes, hides itself when the device turns read-only, and the
+  shell keeps running; `refurb-control brightness` exits non-zero with a reason
+  instead of claiming success.
+- `refurb-diag` runs on the live image and writes its archive.
 - `refurb-shell` compiles (including the Wayland session backend) and 16 unit
   tests pass: desktop-entry parsing, launcher ranking, `nmcli` parsing,
   battery/memory, clock, text measure/draw, and every surface rendering
   non-empty.
+- The keymap handed over by the compositor is used as-is (the NUL-termination
+  bug that forced a US layout on every machine is fixed).
 - The dark interface is rendered by the shipping drawing code into
   `shell/refurb-shell/preview/` and was inspected screen by screen.
 - Full distro build works **without root** (`scripts/mkiso.sh all`, user
@@ -51,17 +67,27 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Not verified — do not assume these work**
 
-- **The graphical session on screen.** The guest's screen stayed on the boot
-  loader frame and the session unit's journal could not be read back (the live
-  guest's console login needs a password this build environment does not have).
-  Unknown, not “working”.
-- **Installation to disk.** The ISO is live-only for now: no installer is
-  included. This is the biggest gap in the milestone.
+- **A real radio associating with an access point.** In the emulated test the
+  client reached the DHCP stage with the correct password, but the access point
+  and the client share one machine and NetworkManager's own scan tears the AP
+  down, so a complete lease was not reproduced. The password path, the stored
+  PSK and the authorization are verified; the radio is not.
+- **A real backlight panel, and the reported brightness crash.** No backlight
+  exists in the VM. The row was exercised against a fake
+  `/sys/class/backlight`; the crash is addressed structurally (unwind, panic
+  hook, `catch_unwind`, worker thread), not reproduced.
+- **The media keys and `Super` combinations themselves.** QEMU's PS/2 keyboard
+  never delivers `XF86Audio*`/`XF86MonBrightness*` keycodes. What is verified is
+  the command each binding runs.
+- **Audio through real speakers**, **physical keyboard layouts**, **Bluetooth
+  devices**, and **Cockpit's UI**.
+- **Installation to disk.** The ISO is live-only; there is no installer.
+- **A text-console login while the desktop is running** makes logind mount a
+  fresh `/run/user/1000`, hiding the Wayland and audio sockets. Use the desktop's
+  own terminal instead.
 - **The Brave extensions.** They are configured (`normal_installed`, pinned,
   removable) but no running Brave was available to confirm they install, that
   h264ify switches YouTube to H.264, or that ResoWarden holds quality.
-- **Wi-Fi, Bluetooth, Bravo/YouTube, Cockpit's UI, suspend** — no hardware and
-  no network in the guest.
 - **Idle memory.** `docs/memory.md` is a budget, not a measurement;
   `scripts/measure-memory.sh` has never been run on a booted system.
 
@@ -69,7 +95,8 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 ### The ISO (this is the product)
 
-    ./scripts/mkiso.sh all          # no root needed, ~40 min, -> refurbished-linux-0.2.0-amd64.iso
+    ./scripts/mkiso.sh all          # no root needed, ~40 min, -> refurbished-linux-0.3.0-amd64.iso
+    ./scripts/mkiso.sh squashfs && ./scripts/mkiso.sh iso   # rebuild from a staged .build/rootfs
 
 On a Debian/Ubuntu host with root, the same image comes from
 `./scripts/build-shell.sh && sudo ./scripts/build-iso.sh` (live-build).
@@ -114,7 +141,8 @@ workarounds, requirements and external downloads.
 3. If it is not needed to browse, connect, or recover, it is not installed.
 4. Background work is a bug unless the user asked for it.
 
-See [docs/release-0.2.md](docs/release-0.2.md) for this round's test report,
+See [docs/hardware-0.6.md](docs/hardware-0.6.md) for this round's findings and
+test report, [docs/release-0.3.md](docs/release-0.3.md) for the desktop round,
 [docs/design.md](docs/design.md) for the desktop rationale,
 [docs/limitations.md](docs/limitations.md) for the honest gaps, and
 [docs/testing.md](docs/testing.md) for the acceptance protocol.

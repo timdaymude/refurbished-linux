@@ -13,6 +13,31 @@ export PATH
 runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 log="$runtime/refurb-audio.log"
 
+start_notifications() {
+    # GTK programs (the Wi-Fi, Bluetooth and sound panels) and NetworkManager
+    # report failures through org.freedesktop.Notifications. Nothing on this
+    # image implements that service, so every message was dropped and a
+    # connection or pairing failure was silent. mako is a Wayland-native
+    # daemon of a few hundred kilobytes and is the only background process
+    # this round adds.
+    command -v mako >/dev/null 2>&1 || return 0
+    # mako is a Wayland client, and this runs before the compositor that the
+    # next line execs: starting it directly made it exit at once with "cannot
+    # connect to a Wayland display", so no notification was ever shown. Wait
+    # for labwc's socket in the background instead.
+    (
+        socket="$runtime/${WAYLAND_DISPLAY:-wayland-0}"
+        i=0
+        while [ "$i" -lt 300 ]; do
+            [ -S "$socket" ] && break
+            i=$((i + 1))
+            sleep 0.1
+        done
+        [ -S "$socket" ] || exit 0
+        exec mako >>"$runtime/refurb-notifications.log" 2>&1
+    ) &
+}
+
 start_audio() {
     command -v pipewire >/dev/null 2>&1 || return 0
     pipewire >>"$log" 2>&1 &
@@ -29,4 +54,5 @@ start_audio() {
 }
 
 start_audio
+start_notifications
 exec labwc

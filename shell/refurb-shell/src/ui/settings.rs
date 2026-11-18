@@ -8,7 +8,7 @@ use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
 use crate::{icons, render, theme};
 
 use super::widgets::{self, Ctx};
-use super::{Action, Section, WindowKind};
+use super::{Action, Section, Tool, WindowKind};
 
 pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     let drag = widgets::titlebar(cx, w, "Settings", icons::Glyph::Gear);
@@ -285,6 +285,15 @@ fn sound(cx: &mut Ctx, pane: Rect) {
         if st.status.muted { "Unmute" } else { "Mute" },
         widgets::Style::Secondary,
         Action::MuteToggle,
+    );
+    // PipeWire's own mixer for everything this row does not cover: per-app
+    // streams, input devices, and Bluetooth headset profiles.
+    widgets::button(
+        cx,
+        render::rect(pane.x() + 152.0, y, 214.0, 32.0),
+        "Outputs, inputs and apps…",
+        widgets::Style::Ghost,
+        Action::OpenTool(Tool::SoundSettings),
     );
     y += 52.0;
     paragraph(

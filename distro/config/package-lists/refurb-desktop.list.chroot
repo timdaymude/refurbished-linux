@@ -2,6 +2,25 @@
 # labwc is the compositor; refurb-shell (shipped as a .deb in
 # config/packages.chroot) draws the bar, launcher and windows.
 labwc
+# Established front ends for the jobs the shell should not reimplement.
+# Each one is a normal application: no daemon, nothing resident until its
+# window is open, and it talks to the same NetworkManager/BlueZ/PipeWire the
+# custom controls already use.
+#   nm-connection-editor
+#                  Wi-Fi: NetworkManager's own editor - scan, security, saved
+#                  networks, autoconnect. The quick panel's dialog stays as the
+#                  shortcut. (iwgtk is iwd-only in Debian and shows "iwd is
+#                  down" on this image, which runs NetworkManager.)
+#   blueman        Bluetooth: BlueZ's manager - discovery, pairing agents,
+#                  trusted devices and audio profiles.
+#   pavucontrol    PipeWire's mixer: per-application streams, input devices,
+#                  and headset profiles.
+#   mako-notifier  The org.freedesktop.Notifications service, so failures from
+#                  those programs are actually shown. Wayland-native, ~2 MB.
+nm-connection-editor
+blueman
+pavucontrol
+mako-notifier
 # Seat management without a display manager or a logind graphical session:
 # libseat's seatd backend hands the compositor DRM and VT access directly.
 # About 1 MB resident, and it replaces a display manager entirely.

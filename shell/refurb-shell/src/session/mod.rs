@@ -30,7 +30,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_l
 
 use crate::keys::{Key, Keymap, Modifiers};
 use crate::system;
-use crate::ui::{self, Action, App, Focus, Section, SliderKind, Surface, WindowKind};
+use crate::ui::{self, Action, App, Focus, Section, SliderKind, Surface, Tool, WindowKind};
 use crate::{pkg, theme};
 
 const BAR_HEIGHT: u32 = theme::BAR_H as u32;
@@ -997,6 +997,24 @@ impl Session {
                     self.app.st.window = None;
                 }
                 self.app.st.focus = Focus::None;
+            }
+            // The custom panel is the quick path; the full interface is the
+            // program that already implements it. Launched as a child, so a
+            // crash in it cannot affect the desktop.
+            Action::OpenTool(tool) => {
+                self.app.st.quick_open = false;
+                self.app.st.launcher_open = false;
+                let opened = match tool {
+                    Tool::WifiSettings => system::open_wifi_settings(),
+                    Tool::BluetoothDevices => system::open_bluetooth_settings(),
+                    Tool::SoundSettings => system::open_sound_settings(),
+                };
+                if !opened {
+                    eprintln!(
+                        "refurb-shell: no program installed for {tool:?} \
+                         (iwgtk, blueman-manager, pavucontrol)"
+                    );
+                }
             }
             Action::SoftwareChar(c) => {
                 if self.app.st.software.query.chars().count() < 64 {

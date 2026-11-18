@@ -2,7 +2,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r6) — dark by default, with a bootable ISO.
+Version **0.3.0** (release r7) — dark by default, with a bootable ISO.
 
 Built on Debian 13 “trixie”, but not a Debian with a different wallpaper. The
 desktop is a new shell written from scratch — its own drawing code, its own
@@ -26,7 +26,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
 | `scripts/` | Build and measurement scripts. |
-| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), design, memory budget, test protocol, limitations, Windows-migration notes. |
+| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), design, memory budget, test protocol, limitations, Windows-migration notes. |
 
 ## Status: read this before trusting anything
 
@@ -52,6 +52,12 @@ icons, its own font, its own interaction model — running on top of the tiny
   shell keeps running; `refurb-control brightness` exits non-zero with a reason
   instead of claiming success.
 - `refurb-diag` runs on the live image and writes its archive.
+- **Established programs cover the parts the shell should not reimplement:**
+  `nm-connection-editor` (Wi-Fi), `blueman` (Bluetooth) and `pavucontrol`
+  (sound) open from the quick panel and Settings as child processes, and
+  `mako-notifier` provides notifications. All four were verified running under
+  labwc on the r7 image; a real Wi-Fi association, Bluetooth pairing and audio
+  routing are still hardware tests.
 - `refurb-shell` compiles (including the Wayland session backend) and 16 unit
   tests pass: desktop-entry parsing, launcher ranking, `nmcli` parsing,
   battery/memory, clock, text measure/draw, and every surface rendering
@@ -141,7 +147,8 @@ workarounds, requirements and external downloads.
 3. If it is not needed to browse, connect, or recover, it is not installed.
 4. Background work is a bug unless the user asked for it.
 
-See [docs/hardware-0.6.md](docs/hardware-0.6.md) for this round's findings and
+See [docs/components-0.7.md](docs/components-0.7.md) for this round's component
+work, [docs/hardware-0.6.md](docs/hardware-0.6.md) for the hardware round and its
 test report, [docs/release-0.3.md](docs/release-0.3.md) for the desktop round,
 [docs/design.md](docs/design.md) for the desktop rationale,
 [docs/limitations.md](docs/limitations.md) for the honest gaps, and

@@ -103,6 +103,15 @@ pub struct Toplevel {
     pub active: bool,
 }
 
+/// A part of the system that an established program handles better than this
+/// shell can: the full NetworkManager, BlueZ and PipeWire interfaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tool {
+    WifiSettings,
+    BluetoothDevices,
+    SoundSettings,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Nothing,
@@ -135,6 +144,8 @@ pub enum Action {
     MuteToggle,
     WindowOpen(WindowKind),
     WindowClose(WindowKind),
+    /// Hand a job to a proven program instead of drawing it here.
+    OpenTool(Tool),
     SoftwareChar(char),
     SoftwareBackspace,
     SoftwarePick(usize),

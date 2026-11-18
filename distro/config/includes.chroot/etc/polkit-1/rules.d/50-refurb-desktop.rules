@@ -9,10 +9,29 @@
 //
 // Membership in netdev is granted to the desktop account by the image build,
 // so the same person who can already read the Wi-Fi state can change it.
+// The same applies to Blueman's own actions (radio power, its network/DHCP
+// helpers) and to udisks2 mounting a removable disk: both ask for an
+// administrator password by default, and a live session started from a system
+// unit is not even an "active" logind session, so the request was refused
+// outright. Formatting and partitioning are deliberately NOT in this list.
+var allowed = [
+    "org.freedesktop.NetworkManager.",
+    "org.bluez.",
+    "org.blueman.",
+    "org.freedesktop.udisks2.filesystem-mount",
+    "org.freedesktop.udisks2.filesystem-unmount",
+    "org.freedesktop.udisks2.eject-media",
+    "org.freedesktop.udisks2.power-off-drive"
+];
+
 polkit.addRule(function (action, subject) {
-    var network = action.id.indexOf("org.freedesktop.NetworkManager.") === 0;
-    var bluetooth = action.id.indexOf("org.bluez.") === 0;
-    if (subject.isInGroup("netdev") && (network || bluetooth)) {
-        return polkit.Result.YES;
+    if (!subject.isInGroup("netdev")) {
+        return null;
     }
+    for (var i = 0; i < allowed.length; i++) {
+        if (action.id.indexOf(allowed[i]) === 0) {
+            return polkit.Result.YES;
+        }
+    }
+    return null;
 });

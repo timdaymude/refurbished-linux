@@ -1,0 +1,47 @@
+Refurbished Linux 0.3.0-r7 — established components under the custom desktop
+
+file:   refurbished-linux-0.3.0-r7-components-amd64.iso
+size:   930086912 bytes
+sha256: 320a42e55ed129fb6741994e8bbeeea47444fa0065bf3c9b915d22728c5fd019
+
+The desktop is unchanged: bar, launcher, quick settings, Wi-Fi dialog, sliders,
+settings window, lock screen, labwc, multi-monitor drawing. What changed is
+what sits underneath.
+
+Reused, unchanged: NetworkManager + wpa_supplicant, BlueZ, PipeWire +
+WirePlumber, UPower + logind, udisks2, labwc, foot, PCManFM, brightnessctl,
+wlr-randr, grim, wob.
+
+Added, each an ordinary child process with no daemon of its own:
+  - nm-connection-editor  NetworkManager's editor: scan, WPA/WPA2/WPA3,
+                          saved networks, autoconnect  (quick settings ->
+                          Wi-Fi -> "Wi-Fi settings")
+  - blueman               BlueZ manager: discovery, pairing, trusted devices,
+                          audio profiles  (quick settings -> "Manage…")
+  - pavucontrol           PipeWire mixer: per-app streams, inputs, profiles
+                          (Settings -> Sound)
+  - mako-notifier         org.freedesktop.Notifications, ~8 MB, now waits for
+                          the compositor instead of starting before it
+
+Rejected after testing:
+  - iwgtk   Debian builds it against iwd only ("iwd is down") and it pulled a
+            second radio daemon; iwgtk and iwd were purged again
+  - xfce4-power-manager, Thunar   no gain over UPower/logind and PCManFM
+
+Root causes found in the running system:
+  - the polkit rule covered NetworkManager and BlueZ but not Blueman's own
+    actions or udisks2 mounting, and a session started from a system unit is
+    not an "active" logind session, so those requests were refused outright
+  - mako started before labwc existed, exited immediately, and every failure
+    notification was dropped
+
+Verified in QEMU/OVMF from this ISO: boots to the desktop with no panic;
+mako running (8.1 MB); volume click 100% -> 48% with wpctl agreeing;
+nm-connection-editor draws its Network Connections window under labwc;
+pavucontrol draws its Volume Control window; no iwd left in the image.
+
+Not verified: real WPA2 association and reconnection after reboot, Bluetooth
+discovery/pairing/audio (no radio in QEMU), the quick-panel Wi-Fi settings
+button click (the panel's expand-on-click is unreliable under synthetic input;
+the program it launches and the identical action path were verified), and the
+blueman-manager window. Details: docs/components-0.7.md

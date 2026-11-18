@@ -470,6 +470,47 @@ pub fn control(args: &[&str]) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// established desktop programs
+// ---------------------------------------------------------------------------
+
+/// Start a proven program as its own process.
+///
+/// The shell draws its own interface, but it should not reimplement a full
+/// NetworkManager or BlueZ front end: scanning, saved networks, the password
+/// dialog, pairing agents and device trust already exist, are maintained, and
+/// cannot take the desktop down with them. Returns false when the program is
+/// not installed, so the caller can say so instead of doing nothing.
+pub fn launch(prog: &str, args: &[&str]) -> bool {
+    if !have(prog) {
+        return false;
+    }
+    spawn(prog, args);
+    true
+}
+
+/// Wi-Fi: NetworkManager's own connection editor, with the Wi-Fi security,
+/// saved networks and autoconnect settings. The quick panel keeps its dialog
+/// for the common case; this is the full interface behind it. `nmtui` in a
+/// terminal is the fallback, and both speak to the same NetworkManager.
+///
+/// (iwgtk was the first choice, but Debian builds it against iwd only: it
+/// opens with "iwd is down" on an image that runs NetworkManager.)
+pub fn open_wifi_settings() -> bool {
+    launch("nm-connection-editor", &[]) || launch("foot", &["-e", "nmtui"])
+}
+
+/// Bluetooth: BlueZ's own manager, with discovery, pairing, trusted devices
+/// and audio profile selection.
+pub fn open_bluetooth_settings() -> bool {
+    launch("blueman-manager", &[]) || launch("foot", &["-e", "bluetoothctl"])
+}
+
+/// Sound: per-application streams, output and input device selection.
+pub fn open_sound_settings() -> bool {
+    launch("pavucontrol", &[])
+}
+
 pub fn battery() -> Option<(f32, bool)> {
     for entry in std::fs::read_dir("/sys/class/power_supply").ok()? {
         let path = entry.ok()?.path();

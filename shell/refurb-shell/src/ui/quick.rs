@@ -11,7 +11,7 @@ use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
 use crate::{icons, render, theme};
 
 use super::widgets::{self, Ctx};
-use super::{Action, Section, SliderKind, WindowKind};
+use super::{Action, Section, SliderKind, Tool, WindowKind};
 
 const PAD: f32 = 14.0;
 const GAP: f32 = 8.0;
@@ -381,6 +381,16 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                     widgets::Style::Ghost,
                     Action::WifiPower,
                 );
+                // The full NetworkManager interface: saved networks, the
+                // password prompt, security settings and reconnection. The
+                // dialog above is the shortcut, not the only way in.
+                widgets::button(
+                    cx,
+                    render::rect(inner.x() + 212.0, btn_y, 124.0, BTN_H),
+                    "Wi-Fi settings",
+                    widgets::Style::Ghost,
+                    Action::OpenTool(Tool::WifiSettings),
+                );
             }
             Block::Bt(rows) => {
                 let inner = render::rect(x, y, width, block.height());
@@ -463,6 +473,15 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                     "Turn off",
                     widgets::Style::Ghost,
                     Action::BtPower,
+                );
+                // Pairing agents, trusted devices and audio profiles live in
+                // BlueZ's own manager; the list above covers quick connects.
+                widgets::button(
+                    cx,
+                    render::rect(inner.x() + 236.0, btn_y, 100.0, BTN_H),
+                    "Manage…",
+                    widgets::Style::Ghost,
+                    Action::OpenTool(Tool::BluetoothDevices),
                 );
             }
             Block::Footer => {

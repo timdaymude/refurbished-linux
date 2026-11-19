@@ -12,7 +12,7 @@ TOOLBOX=${TOOLBOX:-$ROOT/.toolbox}
 export PATH="$TOOLBOX/usr/bin:$PATH"
 export LD_LIBRARY_PATH="$TOOLBOX/usr/lib/x86_64-linux-gnu:$TOOLBOX/lib/x86_64-linux-gnu"
 export QEMU_MODULE_DIR="$TOOLBOX/usr/lib/x86_64-linux-gnu/qemu"
-ISO=${1:-$ROOT/refurbished-linux-0.3.0-amd64.iso}
+ISO=${1:-$(ls -1t "$ROOT"/reawakening-os-*-amd64.iso 2>/dev/null | head -1)}
 ENTRY=${2:-default}
 SER="$ROOT/.build/ser-03.sock"; LOG="$ROOT/.build/serial-03.log"; MON="$ROOT/.build/mon-03.sock"; PID="$ROOT/.build/qemu-03.pid"
 QEMU_SHARE="$TOOLBOX/usr/share/qemu"

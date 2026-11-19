@@ -1,4 +1,4 @@
-// Refurbished Linux: two deliberate exceptions, and nothing else.
+// Reawakening OS: two deliberate exceptions, and nothing else.
 //
 // The desktop is a real logind session now (a normal PAM login on tty1), so the
 // shipped policy already authorizes everything a local active user should have:

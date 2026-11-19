@@ -265,6 +265,7 @@ version = "0.3.0"
 dependencies = [
  "fontdue",
  "libloading",
+ "png",
  "tiny-skia",
  "wayland-client",
  "wayland-protocols 0.31.2",

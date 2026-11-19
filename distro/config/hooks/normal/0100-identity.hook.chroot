@@ -3,31 +3,31 @@
 set -e
 
 cat > /usr/lib/os-release <<'OSR'
-PRETTY_NAME="Refurbished Linux 0.3.0 (First Desktop)"
-NAME="Refurbished Linux"
+PRETTY_NAME="Reawakening OS 0.3.0"
+NAME="Reawakening OS"
 VERSION_ID="0.3"
-VERSION="0.3.0 (First Desktop)"
-VERSION_CODENAME=focus
-ID=refurbished
+VERSION="0.3.0"
+VERSION_CODENAME=reawakening
+ID=reawakening
 ID_LIKE=debian
-HOME_URL="https://refurbishedlinux.org/"
-DOCUMENTATION_URL="https://refurbishedlinux.org/docs"
-SUPPORT_URL="https://refurbishedlinux.org/community"
-BUG_REPORT_URL="https://refurbishedlinux.org/issues"
+HOME_URL="https://github.com/timdaymude/refurbished-linux"
+DOCUMENTATION_URL="https://github.com/timdaymude/refurbished-linux#readme"
+SUPPORT_URL="https://github.com/timdaymude/refurbished-linux/issues"
+BUG_REPORT_URL="https://github.com/timdaymude/refurbished-linux/issues"
 DEBIAN_CODENAME=trixie
 OSR
 ln -sf ../usr/lib/os-release /etc/os-release
 
 cat > /etc/issue <<'ISSUE'
-Refurbished Linux 0.3.0 (First Desktop)  \n  \l
+Reawakening OS 0.3.0  \n  \l
 
 ISSUE
 
 cat > /etc/lsb-release <<'LSB'
-DISTRIB_ID=Refurbished
+DISTRIB_ID=Reawakening
 DISTRIB_RELEASE=0.3
-DISTRIB_CODENAME=focus
-DISTRIB_DESCRIPTION="Refurbished Linux 0.3.0 (First Desktop)"
+DISTRIB_CODENAME=reawakening
+DISTRIB_DESCRIPTION="Reawakening OS 0.3.0"
 LSB
 
-echo "refurbished-pc" > /etc/hostname
+echo "reawakening-pc" > /etc/hostname

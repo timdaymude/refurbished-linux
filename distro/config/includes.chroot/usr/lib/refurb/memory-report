@@ -12,7 +12,7 @@ tmp=/run/refurb-memory.txt
 
 {
     echo
-    echo "=========== REFURBISHED LINUX MEMORY REPORT ==========="
+    echo "=========== REAWAKENING OS MEMORY REPORT ==========="
     echo "kernel: $(uname -r)   cpus: $(nproc)   date: $(date -Is)"
     echo
     echo "-- system (from /proc/meminfo, in MiB) --"

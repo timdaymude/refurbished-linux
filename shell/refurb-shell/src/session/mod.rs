@@ -1207,6 +1207,16 @@ impl Session {
                     self.spawn_displays();
                 }
             }
+            Action::Wallpaper(index) => {
+                // The pixels are already decoded and cached, so the repaint at
+                // the end of dispatch() is one blit per screen. Persisting the
+                // choice is what makes it survive the next login.
+                let choice = crate::wallpaper::Choice::from_index(index);
+                self.app.st.wallpaper = choice;
+                if let Err(e) = crate::wallpaper::activate(choice) {
+                    eprintln!("refurb-shell: could not remember the wallpaper choice: {e}");
+                }
+            }
             Action::UpdateCheck => self.spawn_update(false),
             Action::UpdateInstall => self.spawn_update(true),
             Action::DisplayMode(i) => {

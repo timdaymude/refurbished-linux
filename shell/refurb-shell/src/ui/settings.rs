@@ -5,6 +5,7 @@ use tiny_skia::Rect;
 
 use crate::system::PowerAction;
 use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
+use crate::wallpaper::{self, Choice as Wallpaper};
 use crate::{icons, render, theme};
 
 use super::widgets::{self, Ctx};
@@ -59,7 +60,7 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
         rail.x() + 12.0,
         rail.bottom() - 30.0,
         20.0,
-        "Refurbished Linux",
+        "Reawakening OS",
         theme::T_SMALL - 1.0,
         REGULAR,
         theme::ink_faint(),
@@ -77,6 +78,7 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     match cx.st.settings.section {
         Section::Updates => updates(cx, pane),
         Section::Display => display(cx, pane),
+        Section::Appearance => appearance(cx, pane),
         Section::Sound => sound(cx, pane),
         Section::Power => power(cx, pane),
         Section::About => about(cx, pane),
@@ -132,7 +134,7 @@ fn updates(cx: &mut Ctx, pane: Rect) {
         cx,
         pane,
         &mut y,
-        "Refurbished Linux does not run an update checker, an update notifier or a \
+        "Reawakening OS does not run an update checker, an update notifier or a \
          package catalogue service. Debian's own daily metadata refresh keeps the \
          package lists current for a few seconds a day and then exits.",
     );
@@ -257,6 +259,85 @@ fn display(cx: &mut Ctx, pane: Rect) {
     );
 }
 
+/// Wallpapers: the two pictures that ship in the image, shown as thumbnails so
+/// the choice is made by looking at them rather than by reading file names.
+fn appearance(cx: &mut Ctx, pane: Rect) {
+    let current = cx.st.wallpaper;
+    let mut y = heading(
+        cx,
+        pane,
+        "Appearance",
+        "Two wallpapers, drawn by the session at every screen's own resolution.",
+    );
+    let gap = 14.0;
+    let card_w = (pane.width() - 40.0 - gap) / 2.0;
+    let thumb_h = (card_w * 0.56).clamp(90.0, (pane.bottom() - y - 96.0).max(90.0));
+    for (i, choice) in Wallpaper::ALL.iter().enumerate() {
+        let card = render::rect(
+            pane.x() + 20.0 + i as f32 * (card_w + gap),
+            y,
+            card_w,
+            thumb_h + 48.0,
+        );
+        let active = *choice == current;
+        render::round(cx.pm, card, theme::RADIUS_SM, theme::well());
+        let thumb = render::rect(card.x() + 6.0, card.y() + 6.0, card.width() - 12.0, thumb_h);
+        if !wallpaper::draw_into(cx.pm, *choice, thumb) {
+            render::round(cx.pm, thumb, 4.0, theme::line_soft());
+            cx.t(
+                thumb.x() + 10.0,
+                thumb.y(),
+                thumb.height(),
+                "image not installed",
+                theme::T_SMALL,
+                REGULAR,
+                theme::ink_faint(),
+            );
+        }
+        render::round_stroke(
+            cx.pm,
+            card,
+            theme::RADIUS_SM,
+            if active { theme::accent() } else { theme::line() },
+            if active { 1.6 } else { 1.0 },
+        );
+        cx.t(
+            card.x() + 10.0,
+            thumb.bottom() + 6.0,
+            20.0,
+            choice.label(),
+            theme::T_BODY,
+            MEDIUM,
+            theme::ink(),
+        );
+        if active {
+            let badge = render::rect(card.right() - 62.0, thumb.bottom() + 7.0, 52.0, 18.0);
+            render::round(cx.pm, badge, 6.0, theme::accent());
+            cx.tc(
+                badge.x(),
+                badge.width(),
+                badge.y() + 2.0,
+                14.0,
+                "In use",
+                theme::T_SMALL - 1.5,
+                MEDIUM,
+                theme::on_accent(),
+            );
+        }
+        cx.hit(card, Action::Wallpaper(i));
+    }
+    y += thumb_h + 62.0;
+    paragraph(
+        cx,
+        pane,
+        &mut y,
+        &format!(
+            "{} The choice is remembered for this account and applied to every connected screen.",
+            current.blurb()
+        ),
+    );
+}
+
 fn sound(cx: &mut Ctx, pane: Rect) {
     let st = cx.st;
     let mut y = heading(cx, pane, "Sound", "PipeWire with WirePlumber: output, volume and mute.");
@@ -369,7 +450,7 @@ fn power(cx: &mut Ctx, pane: Rect) {
 
 fn about(cx: &mut Ctx, pane: Rect) {
     let st = cx.st;
-    let mut y = heading(cx, pane, "About", "Refurbished Linux · built on Debian 13 (trixie)");
+    let mut y = heading(cx, pane, "About", "Reawakening OS · built on Debian 13 (trixie)");
     let rows: [(&str, String); 5] = [
         ("Computer", st.status.hostname.clone()),
         ("Processor", st.status.cpu.clone()),
@@ -382,7 +463,7 @@ fn about(cx: &mut Ctx, pane: Rect) {
         ),
         (
             "Desktop",
-            format!("Focus shell {} · labwc (Wayland) · CPU rendering", st.version),
+            format!("Reawakening shell {} · labwc (Wayland) · CPU rendering", st.version),
         ),
         ("Browser", "Brave (default)".to_string()),
     ];
@@ -412,7 +493,7 @@ fn about(cx: &mut Ctx, pane: Rect) {
         cx,
         pane,
         &mut y,
-        "Refurbished Linux is free software, licensed under the GPL-3.0. It keeps \
+        "Reawakening OS is free software, licensed under the GPL-3.0. It keeps \
          the essentials only: no indexing, no telemetry, no cloud sync and no \
          background catalogue. Administration is available through Cockpit when \
          you open it, and through the terminal.",

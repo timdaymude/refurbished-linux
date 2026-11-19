@@ -66,7 +66,7 @@ The image is isohybrid with a GPT, so the same file boots from a CD/DVD, from a
 USB stick written with `dd`, and on UEFI machines (`boot/grub/efi.img`), plus
 legacy BIOS machines (`isolinux.bin`).
 
-Boot entries: *Start Refurbished Linux* (quiet splash), and a verbose variant.
+Boot entries: *Start Reawakening OS* (quiet splash), and a verbose variant.
 Both append `console=ttyS0,115200`, which is harmless on machines without a
 serial port and makes a broken boot easy to diagnose on the ones that have one.
 
@@ -103,6 +103,6 @@ image never loses its last local reference.
 confirm the release asset is the same bytes:
 
     gh release view v0.3.0-r9 --json assets -q '.assets[] | "\(.name) \(.size)"'
-    sha256sum refurbished-linux-0.3.0-r9-amd64.iso
+    sha256sum reawakening-os-0.3.0-r10-amd64.iso
 
 A rebuild needs the full ~6 GB again, so leave room for it before starting.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the QEMU test guest through QMP: absolute pointer, keys, screenshots.
 
-Used only for verification of the Refurbished Linux image; not part of it.
+Used only for verification of the Reawakening OS image; not part of it.
 """
 import json
 import os

@@ -1,6 +1,6 @@
 [Unit]
-Description=Refurbished Linux: prepare the desktop account's home directory
-Documentation=https://refurbishedlinux.org/
+Description=Reawakening OS: prepare the desktop account's home directory
+Documentation=https://github.com/timdaymude/refurbished-linux
 # Runs before the account logs in on tty1, because the home directory must be
 # writable by then: the login shell, GTK and the shell all write there.
 DefaultDependencies=no

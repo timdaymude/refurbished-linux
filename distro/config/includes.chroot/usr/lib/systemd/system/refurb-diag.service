@@ -1,5 +1,5 @@
 [Unit]
-Description=Refurbished Linux memory report on the console
+Description=Reawakening OS memory report on the console
 # Only when the operator asked for it on the kernel command line, which is what
 # the "Memory report" boot entry does. Never runs on a normal boot.
 ConditionKernelCommandLine=refurb.measure=1

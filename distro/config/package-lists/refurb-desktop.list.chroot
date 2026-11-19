@@ -1,4 +1,4 @@
-# Refurbished Linux - the desktop itself.
+# Reawakening OS - the desktop itself.
 # labwc is the compositor; refurb-shell (shipped as a .deb in
 # config/packages.chroot) draws the bar, launcher and windows.
 labwc

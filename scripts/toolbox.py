@@ -59,7 +59,13 @@ def fetch(url, dest=None):
     if dest and dest.exists() and dest.stat().st_size > 0:
         return dest
     print(f"  fetch {url}", flush=True)
-    with urllib.request.urlopen(url, timeout=120) as r, open(dest, "wb") if dest else io.BytesIO() as out:
+    # The archive answers 403 to urllib's default agent on some networks (a
+    # forwarding proxy rejects it); an explicit agent is what curl sends and
+    # what the mirror expects.
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "reawakening-os-toolbox/1.0"}
+    )
+    with urllib.request.urlopen(request, timeout=120) as r, open(dest, "wb") if dest else io.BytesIO() as out:
         data = r.read()
         if dest:
             out.write(data)

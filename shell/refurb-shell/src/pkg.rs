@@ -156,7 +156,7 @@ pub fn run_action(install: bool, package: &str, tx: Sender<Event>) {
         Err(e) => {
             let _ = tx.send(Event::Line(format!("Could not start the helper: {e}")));
             let _ = tx.send(Event::Line(
-                "refurb-apt is installed by the Refurbished Linux base package.".into(),
+                "refurb-apt is installed by the Reawakening OS base package.".into(),
             ));
             let _ = tx.send(Event::Done(false));
             return;

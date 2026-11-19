@@ -12,7 +12,7 @@ qemu-system-x86_64 -L "$T/usr/share/qemu" \
   -machine pc -cpu qemu64 -m 2048 -smp 2 \
   -drive if=pflash,format=raw,readonly=on,file="$T/usr/share/OVMF/OVMF_CODE_4M.fd" \
   -drive if=pflash,format=raw,file="$ROOT/.build/vars8.fd" \
-  -cdrom "${1:-$ROOT/refurbished-linux-0.3.0-amd64.iso}" -boot d \
+  -cdrom "${1:-$ROOT/reawakening-os-0.3.0-r10-amd64.iso}" -boot d \
   -display none -vga std -audio none \
   -device qemu-xhci -device usb-tablet \
   -qmp unix:/tmp/q.sock,server,nowait \

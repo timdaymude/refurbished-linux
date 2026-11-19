@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Refurbished Linux ISO.
+# Build the Reawakening OS ISO.
 #
 #   sudo ./scripts/build-iso.sh
 #

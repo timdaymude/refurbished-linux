@@ -1,6 +1,6 @@
 # Hardware work: Wi-Fi, Bluetooth, audio, media keys (0.3.0-r3)
 
-Round 6 of Refurbished Linux. The image shipped as `v0.3.0-r3`. This file
+Round 6 of Reawakening OS. The image shipped as `v0.3.0-r3`. This file
 records what was actually wrong, what changed, and — just as important — what
 could not be verified without physical hardware.
 

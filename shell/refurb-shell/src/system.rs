@@ -1202,7 +1202,7 @@ pub fn cpu_model() -> String {
 }
 
 pub fn hostname() -> String {
-    read_trim("/etc/hostname").unwrap_or_else(|| "refurbished-pc".into())
+    read_trim("/etc/hostname").unwrap_or_else(|| "reawakening-pc".into())
 }
 
 #[cfg(test)]

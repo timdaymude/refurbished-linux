@@ -1,7 +1,7 @@
 # Limitations and known gaps
 
-This is the list you should read before believing a claim about Refurbished
-Linux. It is ordered by how much it could hurt.
+This is the list you should read before believing a claim about Reawakening
+OS. It is ordered by how much it could hurt.
 
 ## Built and booted, but not finished
 

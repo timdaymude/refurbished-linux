@@ -1,0 +1,35 @@
+Reawakening OS 0.3.0-r10 — the rebrand: new name, new identity, two wallpapers
+
+file:   reawakening-os-0.3.0-r10-amd64.iso
+size:   933232640 bytes
+sha256: 68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12
+
+Everything the user sees now says Reawakening OS: the boot menu (BIOS and
+UEFI), /etc/os-release, /etc/issue, /etc/lsb-release, the hostname
+(reawakening-pc), the session entry in the display manager, the welcome page,
+the About panel, the window decoration and the ISO's own volume label
+(REAWAKENING_OS) and publisher.
+
+The two wallpapers ship in one place, assets/wallpapers/, and mkiso.sh installs
+them into the image at /usr/share/backgrounds/reawakening/. The shell decodes
+the PNG itself with the pure-Rust png crate — no image-processing dependency —
+and paints every connected screen cover-fit at that screen's own size.
+reawakening-default.png (Tux in a blue stained-glass window) is the default;
+reawakening-moonlight.png (Tux on a moonlit beach) is chosen in Settings ->
+Appearance, which shows both as thumbnails with an "In use" badge.
+
+Verified in QEMU/OVMF from this ISO: boots to the desktop with the new wallpaper
+and the bottom bar, the first-run welcome page opens and reads "Welcome to
+Reawakening OS" with the tagline, the serial console greets
+"Reawakening OS 0.3.0  reawakening-pc", the GRUB menu offers "Start Reawakening
+OS", /etc/os-release and /etc/issue inside the squashfs carry the new name, both
+wallpaper files are present, and 23/23 cargo tests pass.
+
+Not verified: the real Chromebook, a real radio associating with an access
+point, a real backlight panel, and the top-row media/brightness keycodes — all
+unchanged from r9 and still hardware tests.
+
+Internal names remain for compatibility: refurb-shell, refurb-control,
+refurb-diag, refurb-keys, refurb-session, the /usr/lib/refurb paths and the
+"refurb" desktop slot. The repository is still timdaymude/refurbished-linux.
+Images up to r9 keep their published names and checksums.

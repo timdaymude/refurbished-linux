@@ -72,8 +72,11 @@ done
 
 # Older ISOs, newest kept. A checksum in releases/ must already exist.
 if [ "$KEEP_ISOS" = 0 ]; then
-    newest=$(ls -1t refurbished-linux-*.iso 2>/dev/null | head -1 || true)
-    for iso in refurbished-linux-*.iso; do
+    # Both naming schemes: images up to r9 were "refurbished-linux-…", from
+    # r10 the product is "reawakening-os-…". Neither may be left orphaned.
+    isos=$(ls -1t reawakening-os-*.iso refurbished-linux-*.iso 2>/dev/null || true)
+    newest=$(printf '%s\n' "$isos" | head -1)
+    for iso in $isos; do
         [ -e "$iso" ] || continue
         if [ "$iso" = "$newest" ]; then
             echo "keeping       $iso (newest; local recovery copy)"

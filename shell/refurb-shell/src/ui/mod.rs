@@ -1,4 +1,4 @@
-//! The Refurbished Linux interface.
+//! The Reawakening OS interface.
 //!
 //! One `App` holds all interface state and draws every surface. Surfaces are
 //! plain pixel buffers plus a list of hit regions, so the same code renders to
@@ -16,7 +16,7 @@ use tiny_skia::{Color, Pixmap, Rect};
 use crate::apps::{self, App as DesktopApp};
 use crate::system::{BtDevice, BtStatus, PowerAction, WifiNetwork, WifiSec};
 use crate::text::TextEngine;
-use crate::{icons, render, theme};
+use crate::{icons, render, theme, wallpaper};
 
 pub use widgets::Ctx;
 
@@ -45,15 +45,17 @@ pub enum WindowKind {
 pub enum Section {
     Updates,
     Display,
+    Appearance,
     Sound,
     Power,
     About,
 }
 
 impl Section {
-    pub const ALL: [Section; 5] = [
+    pub const ALL: [Section; 6] = [
         Section::Updates,
         Section::Display,
+        Section::Appearance,
         Section::Sound,
         Section::Power,
         Section::About,
@@ -63,6 +65,7 @@ impl Section {
         match self {
             Section::Updates => "Updates",
             Section::Display => "Display",
+            Section::Appearance => "Appearance",
             Section::Sound => "Sound",
             Section::Power => "Power",
             Section::About => "About",
@@ -73,6 +76,7 @@ impl Section {
         match self {
             Section::Updates => icons::Glyph::Refresh,
             Section::Display => icons::Glyph::Display,
+            Section::Appearance => icons::Glyph::Moon,
             Section::Sound => icons::Glyph::Volume,
             Section::Power => icons::Glyph::Power,
             Section::About => icons::Glyph::Shield,
@@ -156,6 +160,8 @@ pub enum Action {
     UpdateCheck,
     UpdateInstall,
     DisplayMode(usize),
+    /// Pick one of the two shipped wallpapers, by index in `wallpaper::Choice::ALL`.
+    Wallpaper(usize),
     Power(PowerAction),
     Lock,
     Quit,
@@ -268,6 +274,8 @@ pub struct State {
     pub slider_brightness: Rect,
     pub updates_note: Vec<String>,
     pub version: String,
+    /// The wallpaper the session is painting; see `crate::wallpaper`.
+    pub wallpaper: wallpaper::Choice,
 }
 
 impl Default for State {
@@ -298,6 +306,7 @@ impl Default for State {
             slider_brightness: render::rect(0.0, 0.0, 0.0, 0.0),
             updates_note: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            wallpaper: wallpaper::Choice::default(),
         }
     }
 }
@@ -339,6 +348,7 @@ impl App {
             st: State::default(),
             text: TextEngine::new(),
         };
+        app.st.wallpaper = wallpaper::restore();
         app.reload_apps();
         app.refresh_status();
         app.tick();
@@ -472,7 +482,7 @@ impl Default for App {
 ///
 /// The shell deliberately does not read `.desktop` icon names: an icon theme
 /// would add a dependency, a cache and a few hundred files to keep updated.
-/// Known applications map onto the hand-drawn Refurbished set instead.
+/// Known applications map onto the hand-drawn Reawakening set instead.
 pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
     if app.is_web() {
         // Web shortcuts are told apart by what they are for, not by the fact
@@ -513,7 +523,7 @@ pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
     }
 }
 
-/// The desktop background: warm paper with a single large brand watermark.
+/// The desktop background: the shipped wallpaper, or the drawn fallback below.
 pub fn desktop_background(w: u32, h: u32) -> Pixmap {
     let mut pm = Pixmap::new(w.max(1), h.max(1)).expect("surface size");
     paint_desktop_background(&mut pm);
@@ -524,8 +534,15 @@ pub fn desktop_background(w: u32, h: u32) -> Pixmap {
 /// the background layer surface allocates exactly one buffer at output size.
 pub fn paint_desktop_background(pm: &mut Pixmap) {
     let (w, h) = (pm.width(), pm.height());
-    // One diagonal paper gradient plus a soft accent glow: no images, no
-    // wallpaper daemon, about a millisecond to draw at any resolution.
+    // The shipped wallpaper, decoded once and cropped to this output's own
+    // aspect ratio. Every screen is painted with the same picture at its own
+    // size, so a second monitor is neither stretched nor left blank.
+    if wallpaper::paint(pm) {
+        return;
+    }
+    // Fallback for a machine without the images (a preview build, or a system
+    // where the backgrounds were removed): one diagonal paper gradient plus a
+    // soft accent glow, about a millisecond to draw at any resolution.
     render::fill_gradient(
         pm,
         render::rect(0.0, 0.0, w as f32, h as f32),

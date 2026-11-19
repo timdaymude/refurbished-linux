@@ -1,4 +1,4 @@
-//! Refurbished Linux visual identity.
+//! Reawakening OS visual identity.
 //!
 //! Dark is the default, and it is the only place the palette is written: every
 //! surface in the shell reads these constants, so the whole desktop changes

@@ -1,8 +1,16 @@
-# Refurbished Linux
+# Reawakening OS
+
+**Give Your Computer a Second Life.**
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r9) — dark by default, with a bootable ISO.
+Version **0.3.0** (release r10) — dark by default, with a bootable ISO that ships
+the Reawakening wallpapers.
+
+Formerly named *Refurbished Linux*: the images up to r9 were published under that
+name, and the repository, internal program names (`refurb-shell`,
+`refurb-control`, `refurb-diag`, `refurb-keys`, `refurb-session`) and package
+paths still use it. Only what the system shows to its user was renamed.
 
 Built on Debian 13 “trixie”, but not a Debian with a different wallpaper. The
 desktop is a new shell written from scratch — its own drawing code, its own
@@ -10,7 +18,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 `labwc` compositor.
 
     +--------------------------------------------------------------+
-    |  R   Brave        Files  Software  Settings  Cockpit  ...  [] |
+    |  ◠   Brave        Files  Software  Settings  Cockpit  ...  [] |
     |                                                              |
     |                                                              |
     |            Super + Space  ->  launcher                       |
@@ -24,6 +32,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 |---|---|
 | `shell/refurb-shell/` | The desktop shell: a Rust program that draws the bar, launcher, quick settings, software manager and settings windows itself, and takes over the session after `labwc`. |
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
+| `assets/wallpapers/` | The two shipped wallpapers: `reawakening-default.png` (Tux in a blue stained-glass window, the default) and `reawakening-moonlight.png` (Tux on a moonlit beach). Installed to `/usr/share/backgrounds/reawakening/` and chosen in Settings → Appearance. |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
 | `scripts/` | Build and measurement scripts. `scripts/clean.sh` reclaims the build output once an image is verified. |
 | `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), the session rewrite (0.8), design, memory budget, test protocol, limitations, Windows-migration notes, and `releases.md` — every image built, its SHA256 and where a copy lives. |
@@ -152,7 +161,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 ### The ISO (this is the product)
 
-    ./scripts/mkiso.sh all          # no root needed, ~40 min, -> refurbished-linux-0.3.0-amd64.iso
+    ./scripts/mkiso.sh all          # no root needed, ~40 min, -> reawakening-os-0.3.0-r10-amd64.iso
     ./scripts/mkiso.sh squashfs && ./scripts/mkiso.sh iso   # rebuild from a staged .build/rootfs
 
 On a Debian/Ubuntu host with root, the same image comes from
@@ -182,7 +191,9 @@ workarounds, requirements and external downloads.
   `Alt+Tab`, `Super+Space`. Everything a Windows user already knows.
 - **Shell**: one Rust process, one `poll(2)` loop, a CPU rasteriser
   (`tiny-skia`) and `fontdue` for text. No GTK, no Qt, no icon theme, no
-  wallpaper daemon, no notification daemon, no tray.
+  wallpaper daemon (the shell decodes the shipped PNGs itself, with the pure-Rust
+  `png` crate, and paints every screen cover-fit at its own size), no
+  notification daemon, no tray.
 - **Privilege**: two shell scripts (`refurb-apt`, `refurb-update`) are the only
   things the session user may run as root, and they validate their arguments.
   The software manager is not a daemon: it is a window that runs `apt-cache`

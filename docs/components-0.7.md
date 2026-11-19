@@ -1,6 +1,6 @@
 # Established components, 0.3.0-r7
 
-The desktop stays Refurbished Linux: the same bar, launcher, quick settings,
+The desktop stays Reawakening OS: the same bar, launcher, quick settings,
 Wi-Fi dialog, sliders, settings window, lock screen and multi-monitor drawing,
 on the same labwc compositor. What changed is underneath. Where a full
 NetworkManager, BlueZ or PipeWire front end already exists and is maintained,

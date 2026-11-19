@@ -3,34 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Welcome to Refurbished Linux</title>
+<title>Welcome to Reawakening OS</title>
 <style>
   :root {
-    --paper: #f4f1e9;
-    --card: #fffdf8;
-    --ink: #1b1a18;
-    --soft: #5e5952;
-    --faint: #938d84;
-    --line: #e2dbcd;
-    --accent: #0e7a69;
-    --accent-soft: #daece8;
+    --paper: #0d1624;
+    --card: #132134;
+    --ink: #eef3fb;
+    --soft: #a9b8cf;
+    --faint: #6f8099;
+    --line: #23364e;
+    --accent: #5ea9ff;
+    --accent-soft: #16283f;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: linear-gradient(135deg, #f4f1e9 0%, #eef6f2 100%);
+    background: radial-gradient(1200px 700px at 78% -10%, #1d3a61 0%, #0d1624 55%), #0d1624;
     color: var(--ink);
     font: 15px/1.55 "Inter", "Segoe UI", system-ui, sans-serif;
     padding: 48px 24px 64px;
   }
   .wrap { max-width: 880px; margin: 0 auto; }
   .mark {
-    width: 46px; height: 46px; border-radius: 12px;
-    background: var(--accent); display: grid; place-items: center;
-    color: #fff; font-weight: 600; font-size: 20px;
+    width: 48px; height: 48px; border-radius: 13px;
+    background: linear-gradient(160deg, #2f6ea8, #12233a);
+    display: grid; place-items: center;
+    border: 1px solid #35618f;
   }
-  h1 { font-size: 30px; margin: 18px 0 4px; letter-spacing: -0.02em; }
-  .sub { color: var(--soft); margin: 0 0 30px; }
+  h1 { font-size: 32px; margin: 18px 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--soft); margin: 0 0 6px; }
+  .tagline { color: var(--accent); margin: 0 0 30px; font-weight: 500; }
   .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   .card {
     background: var(--card); border: 1px solid var(--line);
@@ -43,21 +45,34 @@
   .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .links a {
     display: inline-block; padding: 7px 12px; border-radius: 8px;
-    background: #eef7f4; border: 1px solid #d8ece6; font-size: 13px; font-weight: 500;
+    background: var(--accent-soft); border: 1px solid #27405c; font-size: 13px; font-weight: 500;
   }
   .note {
     margin-top: 26px; padding: 16px 18px; border-radius: 12px;
-    background: #fdf6ef; border: 1px solid #f0e3d4; color: var(--soft); font-size: 13.5px;
+    background: #101d2e; border: 1px solid #22354c; color: var(--soft); font-size: 13.5px;
   }
-  code { background: #f1eee6; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  code { background: #1a2a40; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; color: #d9e6f7; }
   footer { margin-top: 34px; color: var(--faint); font-size: 12.5px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="mark">R</div>
+  <!-- The mark: a sun coming up over a horizon, the same shape the desktop
+       draws in its bar, so the welcome page and the shell agree. -->
+  <div class="mark">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#eaf3ff"
+         stroke-width="1.9" stroke-linecap="round">
+      <path d="M5.8 16.2a6.2 6.2 0 0 1 12.4 0" />
+      <path d="M3.8 16.2h16.4" />
+      <path d="M12 4v3" />
+      <path d="M6.1 7.4l2 2" />
+      <path d="M17.9 7.4l-2 2" />
+      <path d="M8.4 19.2h7.2" opacity="0.55" />
+    </svg>
+  </div>
   <h1>This computer is ready.</h1>
-  <p class="sub">Refurbished Linux 0.3.0 “First Desktop” — a small, quick system built for machines like this one.</p>
+  <p class="sub">Reawakening OS 0.3.0 — a small, quick system built for machines like this one.</p>
+  <p class="tagline">Give Your Computer a Second Life.</p>
 
   <div class="grid">
     <div class="card">
@@ -89,7 +104,7 @@
     none of them are installed, pinned or running in the background.
   </div>
 
-  <footer>Refurbished Linux · built on Debian 13 (trixie) · free software under the GPL-3.0</footer>
+  <footer>Reawakening OS · built on Debian 13 (trixie) · free software under the GPL-3.0</footer>
 </div>
 </body>
 </html>

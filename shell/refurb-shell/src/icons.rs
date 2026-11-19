@@ -1,4 +1,4 @@
-//! The Refurbished Linux icon set.
+//! The Reawakening OS icon set.
 //!
 //! Drawn as vectors on a 24×24 unit grid with 1.9-unit round strokes, so the
 //! whole set is resolution independent, needs no icon theme package and stays
@@ -195,16 +195,16 @@ pub fn draw(pm: &mut Pixmap, g: Glyph, r: tiny_skia::Rect, color: Color, stroke:
 
     match g {
         Glyph::Brand => {
-            // A capital R built from the same strokes as the rest of the set:
-            // stem, bowl, leg. The earlier abstract mark read as a "C" at small
-            // sizes; this one is legible from 16 px in the bar to 190 px on the
-            // desktop, which is what the identity has to survive.
-            let w = sw * 1.25;
-            scissors(pm, poly(&[(x(7.6), y(4.4)), (x(7.6), y(19.6))], false), color, w);
-            scissors(pm, poly(&[(x(7.6), y(4.4)), (x(12.4), y(4.4))], false), color, w);
-            scissors(pm, arc_path(x(12.4), y(8.4), 4.0 * s, -90.0, 90.0), color, w);
-            scissors(pm, poly(&[(x(12.4), y(12.4)), (x(7.6), y(12.4))], false), color, w);
-            scissors(pm, poly(&[(x(12.2), y(12.4)), (x(17.0), y(19.6))], false), color, w);
+            // Reawakening: a sun coming up over a horizon, in the same strokes
+            // as the rest of the set. It has to read at 15 px in the bar and at
+            // 190 px on the desktop, so it is three shapes and no detail.
+            let w = sw * 1.2;
+            scissors(pm, arc_path(x(12.0), y(16.2), 6.2 * s, 180.0, 360.0), color, w);
+            scissors(pm, poly(&[(x(3.8), y(16.2)), (x(20.2), y(16.2))], false), color, w);
+            scissors(pm, poly(&[(x(12.0), y(4.0)), (x(12.0), y(7.0))], false), color, w * 0.85);
+            scissors(pm, poly(&[(x(6.1), y(7.4)), (x(8.1), y(9.4))], false), color, w * 0.85);
+            scissors(pm, poly(&[(x(17.9), y(7.4)), (x(15.9), y(9.4))], false), color, w * 0.85);
+            scissors(pm, poly(&[(x(8.4), y(19.2)), (x(15.6), y(19.2))], false), color, w * 0.6);
         }
         Glyph::Grid | Glyph::Apps => {
             for (a, b) in [(3.5, 3.5), (13.5, 3.5), (3.5, 13.5), (13.5, 13.5)] {

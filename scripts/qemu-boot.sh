@@ -13,7 +13,7 @@ export LD_LIBRARY_PATH="$TOOLBOX/usr/lib/x86_64-linux-gnu:$TOOLBOX/lib/x86_64-li
 # Modern qemu builds ship the accelerators and devices as loadable modules, and
 # the module directory is compiled into the binary.
 export QEMU_MODULE_DIR="$TOOLBOX/usr/lib/x86_64-linux-gnu/qemu"
-ISO=${1:-$(ls -1t "$ROOT"/refurbished-linux-*-amd64.iso | head -1)}
+ISO=${1:-$(ls -1t "$ROOT"/reawakening-os-*-amd64.iso "$ROOT"/refurbished-linux-*-amd64.iso 2>/dev/null | head -1)}
 mkdir -p "$ROOT/.build"
 
 # qemu looks for firmware in a compiled-in prefix; point it at the toolbox.

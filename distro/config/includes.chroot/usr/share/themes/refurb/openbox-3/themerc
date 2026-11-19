@@ -1,4 +1,4 @@
-# Refurbished Linux window decoration.
+# Reawakening OS window decoration.
 #
 # The shell draws its own dark panels, so the server-side decoration labwc draws
 # around application windows uses the same palette instead of the stock grey.

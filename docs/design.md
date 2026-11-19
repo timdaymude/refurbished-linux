@@ -56,7 +56,7 @@ Consequences that matter on 2 GB:
 
 ## Interaction model for a Windows user
 
-| Windows | Refurbished Linux |
+| Windows | Reawakening OS |
 |---|---|
 | Start menu | `Super`, or click the mark on the left of the bar |
 | Search | type immediately after `Super` |

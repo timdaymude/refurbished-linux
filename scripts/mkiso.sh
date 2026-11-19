@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Refurbished Linux ISO without root on the build machine.
+# Build the Reawakening OS ISO without root on the build machine.
 #
 #   ./scripts/mkiso.sh toolbox     # assemble the build toolchain (once)
 #   ./scripts/mkiso.sh bootstrap   # debootstrap Debian trixie, extract phase
@@ -24,7 +24,10 @@ ROOTFS="$WORK/rootfs"
 ISODIR="$WORK/iso"
 TOOLBOX=${TOOLBOX:-$ROOT/.toolbox}
 VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$ROOT/shell/refurb-shell/Cargo.toml" | head -1)
-ISO_NAME="refurbished-linux-${VERSION}-amd64.iso"
+# The release round is part of the file name, as it has been since r2. It is
+# deliberately separate from the shell version: 0.3.0 has had nine images.
+RELEASE=${RELEASE:-r10}
+ISO_NAME="reawakening-os-${VERSION}-${RELEASE}-amd64.iso"
 MIRROR=${MIRROR:-http://deb.debian.org/debian}
 SUITE=${SUITE:-trixie}
 
@@ -91,7 +94,7 @@ stage_bootstrap2() {
 
 # --------------------------------------------------------------- packages ---
 stage_packages() {
-    say "installing the Refurbished Linux package set"
+    say "installing the Reawakening OS package set"
     install -d "$ROOTFS/etc/apt/apt.conf.d" "$ROOTFS/usr/share/keyrings"
     cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
@@ -164,6 +167,14 @@ stage_configure() {
     # 0640) and are deliberately left alone.
     find "$DISTRO/config/includes.chroot" -type d -exec chmod 0755 {} +
     cp -a "$DISTRO/config/includes.chroot/." "$ROOTFS/"
+
+    # The wallpapers are kept once, in the repository's assets directory, and
+    # installed into the image here: an ISO build never depends on a copy that
+    # only exists in a build tree.
+    install -d "$ROOTFS/usr/share/backgrounds/reawakening"
+    install -m 644 "$ROOT/assets/wallpapers/reawakening-default.png" \
+                   "$ROOT/assets/wallpapers/reawakening-moonlight.png" \
+                   "$ROOTFS/usr/share/backgrounds/reawakening/"
     install -d "$ROOTFS/tmp/debs"
     cp "$DISTRO"/config/packages.chroot/*.deb "$ROOTFS/tmp/debs/"
 
@@ -216,7 +227,7 @@ stage_configure() {
     rm -f "$ROOTFS/usr/local/sbin/chown" "$ROOTFS/usr/local/sbin/chgrp"
     rm -f "$ROOTFS/lib/libchownshim.so"
     rm -f "$ROOTFS/etc/resolv.conf"
-    echo "refurbished" > "$ROOTFS/etc/hostname"
+    echo "reawakening-pc" > "$ROOTFS/etc/hostname"
 }
 
 # --------------------------------------------------------------- squashfs ---
@@ -291,15 +302,15 @@ PROMPT 0
 TIMEOUT 30
 DEFAULT live
 
-MENU TITLE Refurbished Linux 0.3 - First Desktop
+MENU TITLE Reawakening OS 0.3 - desktop
 
 LABEL live
-  MENU LABEL Start Refurbished Linux
+  MENU LABEL Start Reawakening OS
   KERNEL /live/vmlinuz
   APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
 
 LABEL live-nosplash
-  MENU LABEL Start Refurbished Linux (verbose boot)
+  MENU LABEL Start Reawakening OS (verbose boot)
   KERNEL /live/vmlinuz
   APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
 
@@ -355,16 +366,16 @@ if [ "$live_found" = 0 ]; then
     fi
 fi
 if [ "$live_found" = 0 ]; then
-    if search --no-floppy --set=root --label REFURBISHED_LINUX; then
+    if search --no-floppy --set=root --label REAWAKENING_OS; then
         set live_found=1
     fi
 fi
 
-menuentry "Start Refurbished Linux" {
+menuentry "Start Reawakening OS" {
     linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
     initrd ($root)/live/initrd.img
 }
-menuentry "Start Refurbished Linux (verbose boot)" {
+menuentry "Start Reawakening OS (verbose boot)" {
     linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
     initrd ($root)/live/initrd.img
 }
@@ -378,7 +389,7 @@ EOF
             sed -i "s|quiet splash|${BOOT_EXTRA}|" "$WORK/grub-efi.cfg"
         fi
         if [ -n "${REFURB_GRUB_EXTRA:-}" ]; then
-            sed -i "s|Start Refurbished Linux\"|Start Refurbished Linux${REFURB_GRUB_EXTRA}\"|" "$WORK/grub-efi.cfg"
+            sed -i "s|Start Reawakening OS\"|Start Reawakening OS${REFURB_GRUB_EXTRA}\"|" "$WORK/grub-efi.cfg"
         fi
         # iso9660/udf: reading the ISO volume itself; search_fs_file and
         # search_label: the --file and --label forms used above (plain
@@ -392,7 +403,7 @@ EOF
     if [ -f "$WORK/bootx64.efi" ]; then
         rm -f "$WORK/efi.img"
         dd if=/dev/zero of="$WORK/efi.img" bs=1M count=10 status=none
-        mkfs.vfat -n REFURBEFI "$WORK/efi.img" >/dev/null
+        mkfs.vfat -n REAWAKENING "$WORK/efi.img" >/dev/null
         mmd -i "$WORK/efi.img" ::EFI ::EFI/BOOT
         mcopy -i "$WORK/efi.img" "$WORK/bootx64.efi" ::EFI/BOOT/BOOTX64.EFI
         cp "$WORK/efi.img" "$ISODIR/boot/grub/efi.img"
@@ -406,9 +417,9 @@ EOF
     xorriso -as mkisofs \
         -iso-level 3 \
         -full-iso9660-filenames \
-        -volid "REFURBISHED_LINUX" \
-        -publisher "Refurbished Linux" \
-        -A "Refurbished Linux $VERSION" \
+        -volid "REAWAKENING_OS" \
+        -publisher "Reawakening OS" \
+        -A "Reawakening OS $VERSION" \
         -isohybrid-mbr "$MBR" \
         -eltorito-boot isolinux/isolinux.bin \
         -eltorito-catalog isolinux/boot.cat \

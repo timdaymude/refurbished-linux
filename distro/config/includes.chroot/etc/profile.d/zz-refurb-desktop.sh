@@ -1,4 +1,4 @@
-# Start the Refurbished Linux desktop from the account's own login session.
+# Start the Reawakening OS desktop from the account's own login session.
 #
 # 0.3.0-r7 started labwc from a *system* unit through runuser. That produced a
 # graphical session with no logind session behind it, and every architectural

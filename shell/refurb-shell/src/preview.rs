@@ -101,7 +101,7 @@ pub fn seed(app: &mut App) {
     app.st.status.battery = Some((0.72, false));
     app.st.status.brightness = Some(0.8);
     app.st.status.updates = 3;
-    app.st.status.hostname = "refurbished-pc".into();
+    app.st.status.hostname = "reawakening-pc".into();
     app.st.status.mem_total_mb = 1962;
     app.st.status.mem_available_mb = 1180;
     app.st.status.cpu = "Intel(R) Celeron(R) N4020 CPU @ 1.10GHz".into();
@@ -322,6 +322,12 @@ pub fn render_all(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     out.push(save(
         &window_with(&mut app, w, h, WindowKind::Settings),
         dir.join("07-settings-about.png"),
+    )?);
+
+    app.st.settings.section = ui::Section::Appearance;
+    out.push(save(
+        &window_with(&mut app, w, h, WindowKind::Settings),
+        dir.join("09-settings-appearance.png"),
     )?);
 
     app.st.wifi.pending = Some("Neighbour's router".into());

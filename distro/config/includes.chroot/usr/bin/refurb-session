@@ -1,5 +1,5 @@
 #!/bin/sh
-# The Refurbished Linux desktop session: environment, first-run welcome, labwc.
+# The Reawakening OS desktop session: environment, first-run welcome, labwc.
 #
 # This runs as the account's own login session on tty1 (see
 # /etc/profile.d/zz-refurb-desktop.sh), so XDG_RUNTIME_DIR, XDG_SESSION_ID and

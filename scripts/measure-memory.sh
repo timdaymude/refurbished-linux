@@ -1,5 +1,5 @@
 #!/bin/sh
-# Measure the idle memory cost of a Refurbished Linux desktop.
+# Measure the idle memory cost of a Reawakening OS desktop.
 #
 #   ./scripts/measure-memory.sh            # inside the running session
 #   ./scripts/measure-memory.sh --quiet    # only the summary

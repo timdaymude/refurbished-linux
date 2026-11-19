@@ -107,7 +107,7 @@ chmod 0440 /etc/sudoers.d/refurb-helpers
 # and the session launcher looks for the first uid >= 1000. An installed system
 # replaces this with the account the user creates in the installer.
 if ! getent passwd 1000 >/dev/null 2>&1; then
-    useradd -m -u 1000 -s /bin/bash -c "Refurbished Linux" refurb || true
+    useradd -m -u 1000 -s /bin/bash -c "Reawakening OS" refurb || true
     passwd -d refurb >/dev/null 2>&1 || true
 fi
 for account in refurb user; do

@@ -46,10 +46,10 @@ Architecture: amd64
 Depends: libc6
 Recommends: labwc, fonts-inter
 Installed-Size: $(du -sk "$PKG/usr" | cut -f1)
-Maintainer: Refurbished Linux <hello@refurbishedlinux.org>
-Description: the Refurbished Linux desktop shell
+Maintainer: Reawakening OS <timdaymude@users.noreply.github.com>
+Description: the Reawakening OS desktop shell
  The bar, launcher, quick settings, software manager and settings windows of
- Refurbished Linux. It draws its own interface with a CPU rasteriser: no GTK,
+ Reawakening OS. It draws its own interface with a CPU rasteriser: no GTK,
  no Qt, no toolkit, no icon theme. Keyboard handling uses libxkbcommon when it
  is present and falls back to a US layout when it is not.
 CONTROL

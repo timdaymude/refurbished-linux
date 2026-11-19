@@ -9,7 +9,7 @@ ends with a virtual-machine test before any hardware is touched.
 Calamares is a Qt application with its own module system, branding engine and
 ~40 dependencies; it would add roughly 150 MB of packages and a Qt stack to an
 image whose idle desktop currently sits at 190 MB PSS. That contradicts the
-whole point of Refurbished Linux.
+whole point of Reawakening OS.
 
 **Decision: a small native installer, `refurb-install`, written in Rust with
 the same drawing code `refurb-shell` already uses** (`tiny-skia` + `fontdue`,
@@ -53,7 +53,7 @@ install complexity). Both can come later as an explicit opt-in.
 7. **Install** — progress with the current step, cancellable *before*
    partitioning only. Steps: partition → format → unsquash the live filesystem
    → chroot: fstab, locale, keymap, user, hostname, zram, initramfs → GRUB.
-8. **Finish** — "Restart into Refurbished Linux", plus a log file the user can
+8. **Finish** — "Restart into Reawakening OS", plus a log file the user can
    read if anything failed.
 
 ## Implementation notes

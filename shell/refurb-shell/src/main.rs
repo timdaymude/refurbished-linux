@@ -1,8 +1,8 @@
-//! Refurbished Linux shell.
+//! Reawakening OS shell.
 //!
-//! One process draws the bar, the launcher, quick settings, Software and
-//! Settings. It is a Wayland client of the labwc compositor and owns no
-//! background work of its own.
+//! One process draws the wallpaper, the bar, the launcher, quick settings,
+//! Software and Settings. It is a Wayland client of the labwc compositor and
+//! owns no background work of its own.
 
 mod apps;
 mod icons;
@@ -14,12 +14,13 @@ mod system;
 mod text;
 mod theme;
 mod ui;
+mod wallpaper;
 
 #[cfg(feature = "session")]
 mod session;
 
 const USAGE: &str = "\
-refurb-shell — the Refurbished Linux desktop shell
+refurb-shell — the Reawakening OS desktop shell
 
 USAGE:
   refurb-shell                     run the desktop session (needs Wayland + labwc)

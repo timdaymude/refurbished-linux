@@ -1,4 +1,4 @@
-# Refurbished Linux - core system.
+# Reawakening OS - core system.
 # Only what the machine needs to boot, connect and stay healthy.
 linux-image-amd64
 live-boot

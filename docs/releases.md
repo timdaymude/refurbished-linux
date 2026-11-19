@@ -15,7 +15,18 @@ full per-release report.
 | 0.3.0-r6 hardware | 824,180,736 | `5cdce8ee0e9dfba8d4f1ec6324887504c3d50822fb9318605bdf481c9bbe2e7e` | **never published** (no tag, no release) | `~/refurbished-linux-releases/` |
 | 0.3.0-r7 components | 930,086,912 | `320a42e55ed129fb6741994e8bbeeea47444fa0065bf3c9b915d22728c5fd019` | `v0.3.0-r7` — `refurbished-linux-0.3.0-amd64.iso` | none |
 | 0.3.0-r8 session | 929,038,336 | `38f428fa5497126e8f436a53c069dbf2cfb3e87e125b5cfe92d2af381bf04a10` | `v0.3.0-r8` — `refurbished-linux-0.3.0-r8-amd64.iso` | none |
-| 0.3.0-r9 chromebook | 929,038,336 | `4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e` | `v0.3.0-r9` — `refurbished-linux-0.3.0-r9-amd64.iso` | workspace root |
+| 0.3.0-r9 chromebook | 929,038,336 | `4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e` | `v0.3.0-r9` — `refurbished-linux-0.3.0-r9-amd64.iso` | none (release is the copy) |
+| 0.3.0-r10 Reawakening OS | 933,232,640 | `68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12` | `v0.3.0-r10` — `reawakening-os-0.3.0-r10-amd64.iso` | workspace root |
+
+## Naming
+
+Images up to and including **r9** were published as *Refurbished Linux* with
+file names starting `refurbished-linux-`. From **r10** the product is
+*Reawakening OS* and the file names start `reawakening-os-`. The repository,
+the branch, the tags and the internal program names (`refurb-shell`,
+`refurb-control`, `refurb-diag`, `refurb-keys`, `refurb-session`) are unchanged,
+and the old ISO files keep their published names and checksums — the rename
+applies to new images only.
 
 ## How each one was verified
 

@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Refurbished Linux
-Comment=Focus desktop
+Name=Reawakening OS
+Comment=Reawakening desktop
 Exec=/usr/bin/refurb-session
 Type=Application
 DesktopNames=refurb

@@ -20,7 +20,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 stamp=$(date +%Y%m%d-%H%M%S)
-host=$(hostname 2>/dev/null || echo refurbished)
+host=$(hostname 2>/dev/null || echo reawakening-pc)
 base=${1:-"$HOME/refurb-diag-$host-$stamp"}
 mkdir -p "$base" 2>/dev/null || base="/tmp/refurb-diag-$host-$stamp"
 mkdir -p "$base" || exit 1

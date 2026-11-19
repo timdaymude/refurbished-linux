@@ -2,7 +2,9 @@
 # Make the session start at boot, and make the helpers usable.
 set -e
 
-# Seat management for the compositor (no display manager, no logind session).
+# Seat management fallback. libseat uses logind for the real login session; seatd
+# stays installed and running so the compositor still gets DRM and VT access if
+# it is ever started outside a logind session (a recovery shell, for example).
 systemctl enable seatd.service >/dev/null 2>&1 || true
 systemctl start seatd.service >/dev/null 2>&1 || true
 for group in _seatd seatd; do
@@ -29,11 +31,48 @@ cat > /etc/systemd/system/bluetooth.service.d/10-refurb-rfkill.conf <<'CONF'
 ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
 CONF
 
-systemctl enable refurb-session.service >/dev/null 2>&1 || true
+# The desktop is no longer a system unit. It starts from the account's own
+# login session on tty1 (pam_systemd registers a real logind session: seat,
+# XDG_SESSION_ID, systemd --user, active polkit subject). An image upgraded
+# from r7 still has the old unit enabled, so remove that link explicitly.
+systemctl disable refurb-session.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/graphical.target.wants/refurb-session.service 2>/dev/null || true
+systemctl enable refurb-session-prepare.service >/dev/null 2>&1 || true
+ln -sf /usr/lib/systemd/system/refurb-session-prepare.service \
+       /etc/systemd/system/multi-user.target.wants/refurb-session-prepare.service
+# tty1 carries the desktop (autologin drop-in in /etc/systemd/system);
+# tty2-tty6 stay recovery consoles with a normal login prompt.
+systemctl enable getty@tty1.service >/dev/null 2>&1 || true
+ln -sf /usr/lib/systemd/system/getty@.service \
+       /etc/systemd/system/getty.target.wants/getty@tty1.service
+
+# Audio inside the user session. Debian ships these units, but enabling them is
+# a `systemctl --user preset` step that cannot run in a build chroot, so the
+# wants links are created here: pipewire and pipewire-pulse are socket
+# activated, and wireplumber is pulled in by pipewire. Before this round they
+# were not enabled at all and the session launcher had to spawn the daemons by
+# hand, outside systemd, where nothing could restart them.
+# Flatpak's document portal is not used by anything on this image and needs
+# FUSE, which a live system does not provide: it failed on every boot (D-Bus
+# activation from the browser) and left `systemctl --user` reporting "degraded".
+# Masked rather than shipped as a failed unit.
+for unit in xdg-document-portal.service xdg-permission-store.service \
+            xdg-desktop-portal.service; do
+    ln -sf /dev/null "/etc/systemd/user/$unit"
+done
+
+install -d /etc/systemd/user/sockets.target.wants /etc/systemd/user/pipewire.service.wants
+for unit in pipewire.socket pipewire-pulse.socket; do
+    [ -f "/usr/lib/systemd/user/$unit" ] && \
+        ln -sf "/usr/lib/systemd/user/$unit" "/etc/systemd/user/sockets.target.wants/$unit"
+done
+[ -f /usr/lib/systemd/user/wireplumber.service ] && \
+    ln -sf /usr/lib/systemd/user/wireplumber.service \
+           /etc/systemd/user/pipewire.service.wants/wireplumber.service
 # Memory report: enabled but inert unless refurb.measure=1 is on the cmdline.
 systemctl enable refurb-diag.service >/dev/null 2>&1 || true
 # Recovery route: Ctrl+Alt+F2..F6 always gives a text login, even if the
-# graphical session fails. tty1 belongs to the session (Conflicts= there).
+# graphical session fails. tty1 belongs to the desktop session.
 # live-config drops an autologin for a user called "user"; this image has no
 # such account, so every getty failed and restarted in a loop (visible as
 # pam_unix "could not identify user"). The desktop does not need a text
@@ -48,7 +87,7 @@ systemctl set-default graphical.target >/dev/null 2>&1 || true
 for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
                /usr/lib/refurb/session-launch /usr/lib/refurb/refurb-control \
-               /usr/lib/refurb/osd-start \
+               /usr/lib/refurb/osd-start /usr/lib/refurb/tty1-autologin \
                /usr/lib/refurb/refurb-diag \
                /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
@@ -57,6 +96,9 @@ done
 # diagnostics script. The labwc keybinds use the absolute path, but a user who
 # types `refurb-control volume up` should not have to know where it lives.
 ln -sf /usr/lib/refurb/refurb-control /usr/local/bin/refurb-control
+# Diagnostics are meant to be typed by whoever is testing the laptop, from a
+# terminal, without knowing where the script lives.
+ln -sf /usr/lib/refurb/refurb-diag /usr/local/bin/refurb-diag
 
 chmod 0440 /etc/sudoers.d/refurb-helpers
 

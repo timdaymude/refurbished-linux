@@ -5,6 +5,26 @@
 # the interface does not, so it is restarted instead of leaving a blank screen.
 # A clean exit (status 0) means the shell was asked to quit at end of session.
 set -u
+
+# The shell is a Wayland client, so a restart is only useful if it still knows
+# which compositor to talk to. labwc exports WAYLAND_DISPLAY for its autostart
+# children, but this script outlives that moment: measured on the r8 image, the
+# supervisor's environment had XDG_RUNTIME_DIR and no WAYLAND_DISPLAY, so every
+# restart after a crash failed with "Could not find wayland compositor" and the
+# desktop stayed without a bar until reboot. Discover the socket instead of
+# trusting the environment.
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export XDG_RUNTIME_DIR="$runtime"
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    for socket in "$runtime"/wayland-*; do
+        case "$socket" in *.lock) continue ;; esac
+        [ -S "$socket" ] || continue
+        WAYLAND_DISPLAY="${socket##*/}"
+        export WAYLAND_DISPLAY
+        break
+    done
+fi
+
 state="${XDG_STATE_HOME:-$HOME/.local/state}/refurb"
 mkdir -p "$state" 2>/dev/null || state=/tmp
 log="$state/session.log"

@@ -1,0 +1,23 @@
+# Refurbished Linux notification defaults.
+#
+# mako's built-in look is light grey on white, which is unreadable against this
+# desktop's dark theme. These values are deliberately restrained: no icons, a
+# short timeout, and no shadow or transparency effects that cost frames on the
+# hardware this image targets.
+background-color=#1b1a18f2
+text-color=#f2efe9
+border-color=#3ddbd9
+border-size=1
+border-radius=8
+padding=12
+margin=12
+width=340
+height=160
+max-visible=3
+default-timeout=6000
+ignore-timeout=0
+font=DejaVu Sans 11
+anchor=top-right
+layer=overlay
+icons=0
+max-icon-size=0

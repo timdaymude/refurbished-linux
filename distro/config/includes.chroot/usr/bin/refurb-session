@@ -1,5 +1,13 @@
 #!/bin/sh
 # The Refurbished Linux desktop session: environment, first-run welcome, labwc.
+#
+# This runs as the account's own login session on tty1 (see
+# /etc/profile.d/zz-refurb-desktop.sh), so XDG_RUNTIME_DIR, XDG_SESSION_ID and
+# the systemd user instance already exist. It no longer wraps everything in
+# `dbus-run-session`: the session bus is the user's real bus, shared with
+# pipewire, wireplumber and every application, which is what makes the audio
+# sockets and the notification service belong to the session rather than to one
+# private process tree.
 set -u
 
 # labwc starts its autostart script and the keybinds with whatever PATH it
@@ -16,15 +24,24 @@ export MOZ_ENABLE_WAYLAND=1
 export BROWSER=brave-browser
 export ELECTRON_OZONE_PLATFORM_HINT=auto
 # Dark is the default everywhere, including GTK apps and Chromium's UI.
-# No display manager and no logind graphical session here, so the
-# compositor takes its seat from seatd rather than logind.
+export GTK_THEME=Adwaita:dark
+export QT_STYLE_OVERRIDE=Adwaita-Dark
+
 # Machines with no usable GPU (virtual machines, very old integrated graphics)
 # must still get a desktop: let wlroots fall back to a software renderer
 # instead of refusing to start. Hardware GL is used whenever it exists.
 export WLR_RENDERER_ALLOW_SOFTWARE=1
-export LIBSEAT_BACKEND=seatd
-export GTK_THEME=Adwaita:dark
-export QT_STYLE_OVERRIDE=Adwaita-Dark
+# libseat is not pinned to seatd any more: with a real logind session its
+# default order (logind first, seatd as fallback) is exactly right.
+
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+# dbus-user-session provides the user bus at $XDG_RUNTIME_DIR/bus; naming it
+# explicitly means a shell started without the PAM environment still finds it.
+if [ -S "$XDG_RUNTIME_DIR/bus" ] && [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+fi
 
 mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Pictures" 2>/dev/null || true
 command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update >/dev/null 2>&1 || true
@@ -39,7 +56,4 @@ if [ ! -f "$welcome_marker" ] && mkdir -p "$HOME/.config/refurb" 2>/dev/null \
         "file:///usr/share/refurb/welcome/index.html" ) >/dev/null 2>&1 &
 fi
 
-# PipeWire, pipewire-pulse and WirePlumber must live in the same session bus as
-# the compositor, so they are started there rather than by a logind user
-# session that this machine does not have.
-exec dbus-run-session -- /usr/lib/refurb/session-launch
+exec /usr/lib/refurb/session-launch

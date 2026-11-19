@@ -1,0 +1,19 @@
+[Unit]
+Description=Refurbished Linux: prepare the desktop account's home directory
+Documentation=https://refurbishedlinux.org/
+# Runs before the account logs in on tty1, because the home directory must be
+# writable by then: the login shell, GTK and the shell all write there.
+DefaultDependencies=no
+After=local-fs.target systemd-sysusers.service systemd-tmpfiles-setup.service
+Before=getty@tty1.service
+ConditionPathExists=/etc/passwd
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/refurb/session-start
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

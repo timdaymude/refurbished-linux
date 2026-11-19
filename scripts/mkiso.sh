@@ -296,17 +296,17 @@ MENU TITLE Refurbished Linux 0.3 - First Desktop
 LABEL live
   MENU LABEL Start Refurbished Linux
   KERNEL /live/vmlinuz
-  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 quiet splash
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
 
 LABEL live-nosplash
   MENU LABEL Start Refurbished Linux (verbose boot)
   KERNEL /live/vmlinuz
-  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
 
 LABEL live-diag
   MENU LABEL Memory report (support / benchmark boot)
   KERNEL /live/vmlinuz
-  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
+  APPEND initrd=/live/initrd.img boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet refurb.measure=1
 
 EOF
 
@@ -361,15 +361,15 @@ if [ "$live_found" = 0 ]; then
 fi
 
 menuentry "Start Refurbished Linux" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet splash
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
     initrd ($root)/live/initrd.img
 }
 menuentry "Start Refurbished Linux (verbose boot)" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
     initrd ($root)/live/initrd.img
 }
 menuentry "Memory report (support / benchmark boot)" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 quiet refurb.measure=1
+    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet refurb.measure=1
     initrd ($root)/live/initrd.img
 }
 EOF

@@ -1,0 +1,37 @@
+#!/bin/sh
+# agetty for tty1 with the desktop account already named.
+#
+# Refurbished Linux still boots straight into the desktop; the difference from
+# 0.3.0-r7 is that the desktop is now the account's own login session (started
+# by a normal PAM login) instead of a process spawned by a system unit. That is
+# what gives the session a logind seat, XDG_SESSION_ID, a systemd user instance
+# and an "active" polkit subject - and it is why NetworkManager, Blueman,
+# udisks2 and PipeWire now work through their standard authorization and
+# service model instead of the image carrying exceptions for all of them.
+#
+# The account is resolved at start time, like the old session unit did: the live
+# medium and the installer may not pick uid 1000.
+set -u
+
+vt=${1:-tty1}
+term=${2:-linux}
+
+target=""
+for uid in $(awk -F: '$3 >= 1000 && $3 < 60000 {print $3}' /etc/passwd | sort -n); do
+    entry=$(getent passwd "$uid" || true)
+    [ -n "$entry" ] || continue
+    name=$(printf '%s' "$entry" | cut -d: -f1)
+    shell=$(printf '%s' "$entry" | cut -d: -f7)
+    case "$shell" in */nologin|*/false|"") continue ;; esac
+    target=$name
+    break
+done
+
+if [ -z "$target" ]; then
+    # No desktop account exists (a broken or hand-modified image). A normal
+    # login prompt is still better than a console nobody can use.
+    echo "refurb: no desktop account with uid >= 1000; falling back to a login prompt" >&2
+    exec /sbin/agetty "$vt" "$term"
+fi
+
+exec /sbin/agetty --autologin "$target" --noclear "$vt" "$term"

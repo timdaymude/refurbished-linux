@@ -1,27 +1,35 @@
-// Refurbished Linux runs a single desktop user on a machine with no
-// administrator present. Every NetworkManager write (connect to a Wi-Fi
-// network, turn the radio off, forget a network) and every BlueZ write
-// (power the adapter on or off, pair) is a polkit action, and Debian's default
-// policy asks for an administrator password. There is no authentication agent
-// in this session, so the request was simply refused and the shell could only
-// report "Not authorized to control networking" after the password had already
-// been typed.
+// Refurbished Linux: two deliberate exceptions, and nothing else.
 //
-// Membership in netdev is granted to the desktop account by the image build,
-// so the same person who can already read the Wi-Fi state can change it.
-// The same applies to Blueman's own actions (radio power, its network/DHCP
-// helpers) and to udisks2 mounting a removable disk: both ask for an
-// administrator password by default, and a live session started from a system
-// unit is not even an "active" logind session, so the request was refused
-// outright. Formatting and partitioning are deliberately NOT in this list.
+// The desktop is a real logind session now (a normal PAM login on tty1), so the
+// shipped policy already authorizes everything a local active user should have:
+//
+//   org.freedesktop.NetworkManager.network-control   allow_active = yes
+//   org.freedesktop.udisks2.filesystem-mount         allow_active = yes
+//   org.freedesktop.udisks2.eject-media              allow_active = yes
+//   org.freedesktop.udisks2.power-off-drive           allow_active = yes
+//   org.freedesktop.NM-libnm / BlueZ agent traffic    no polkit action at all
+//
+// r7 carried broad wildcards for NetworkManager, BlueZ, Blueman and udisks2
+// because a session started from a system unit was never "active" and every one
+// of those actions was refused. Those wildcards are gone.
+//
+// What remains are the two actions Debian's policy sets to auth_admin_keep even
+// for an active local session, in a session that has no authentication agent, so
+// they could only ever fail:
+//
+//   NetworkManager.settings.modify.system  saving a Wi-Fi profile (the "new
+//                                          network" path in the connection
+//                                          editor) writes to /etc, not to the
+//                                          user's own settings;
+//   blueman.rfkill.setstate                Blueman's radio power switch.
+//
+// Membership in netdev is granted to the desktop account by the image build, so
+// the person who can already read and change the network can do these two.
+// Partitioning, formatting, mounting another seat's or another user's disk, and
+// every administrator action stay refused.
 var allowed = [
-    "org.freedesktop.NetworkManager.",
-    "org.bluez.",
-    "org.blueman.",
-    "org.freedesktop.udisks2.filesystem-mount",
-    "org.freedesktop.udisks2.filesystem-unmount",
-    "org.freedesktop.udisks2.eject-media",
-    "org.freedesktop.udisks2.power-off-drive"
+    "org.freedesktop.NetworkManager.settings.modify.system",
+    "org.blueman.rfkill.setstate"
 ];
 
 polkit.addRule(function (action, subject) {
@@ -29,7 +37,7 @@ polkit.addRule(function (action, subject) {
         return null;
     }
     for (var i = 0; i < allowed.length; i++) {
-        if (action.id.indexOf(allowed[i]) === 0) {
+        if (action.id === allowed[i]) {
             return polkit.Result.YES;
         }
     }

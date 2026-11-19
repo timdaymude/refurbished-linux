@@ -2,7 +2,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r7) — dark by default, with a bootable ISO.
+Version **0.3.0** (release r8) — dark by default, with a bootable ISO.
 
 Built on Debian 13 “trixie”, but not a Debian with a different wallpaper. The
 desktop is a new shell written from scratch — its own drawing code, its own
@@ -26,17 +26,36 @@ icons, its own font, its own interaction model — running on top of the tiny
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
 | `scripts/` | Build and measurement scripts. |
-| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), design, memory budget, test protocol, limitations, Windows-migration notes. |
+| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), the session rewrite (0.8), design, memory budget, test protocol, limitations, Windows-migration notes. |
 
 ## Status: read this before trusting anything
 
 **Verified**
 
-- `refurbished-linux-0.3.0-amd64.iso` builds end to end and is **824,180,736
-  bytes** with a published SHA256
-  (`5cdce8ee0e9dfba8d4f1ec6324887504c3d50822fb9318605bdf481c9bbe2e7e`). It carries
-  both a BIOS (`isolinux.bin`) and a UEFI (`boot/grub/efi.img`) boot entry on
-  an isohybrid MBR+GPT layout.
+- `refurbished-linux-0.3.0-r8-amd64.iso` builds end to end and is
+  **929,038,336 bytes** with a published SHA256
+  (`38f428fa5497126e8f436a53c069dbf2cfb3e87e125b5cfe92d2af381bf04a10`). It
+  carries both a BIOS (`isolinux.bin`) and a UEFI (`boot/grub/efi.img`) boot
+  entry on an isohybrid MBR+GPT layout. The r7 ISO stays published as
+  `refurbished-linux-0.3.0-r7-amd64.iso`.
+- **The desktop is now a real login session** (r8). It starts from the account's
+  own login on tty1, so `pam_systemd` registers a logind session with a seat, an
+  `XDG_SESSION_ID`, a systemd user instance and a user D-Bus. Verified on the
+  shipped ISO: `loginctl` shows session 1 as `uid 1000, seat0, tty1, user`; the
+  pipewire, pipewire-pulse and wireplumber **user units** are running;
+  `pkcheck` authorizes `network-control`, `settings.modify.system`,
+  `udisks2.filesystem-mount`, `udisks2.eject-media`, `blueman.rfkill.setstate`
+  and `login1.power-off` for the shell's own process; a second login on ttyS0 no
+  longer disturbs the desktop's runtime directory (that r7 limitation is gone).
+- **The taskbar is at the bottom of the screen** by default (r8), and monitors
+  plugged in or unplugged while the desktop runs are picked up: registry events
+  rebuild the per-screen wallpaper and bar, and the screen list is also
+  reconciled against the registry once a second, so an output that appears late
+  cannot be missed. Two *active* screens at once could not be produced in QEMU —
+  its second GPU stays inactive under software rendering — so that path is
+  code-reviewed rather than observed; see below.
+- **The compositor keymap loads** (r8): the keyboard layout now comes from the
+  compositor instead of a silent US fallback.
 - The ISO **boots in QEMU/OVMF to the desktop from the shipped image**: the bar
   draws, the session log contains no panic, no restart and no keymap warning.
 - **The Wi-Fi path works up to the password.** Clicking a network gives the panel
@@ -88,9 +107,20 @@ icons, its own font, its own interaction model — running on top of the tiny
 - **Audio through real speakers**, **physical keyboard layouts**, **Bluetooth
   devices**, and **Cockpit's UI**.
 - **Installation to disk.** The ISO is live-only; there is no installer.
-- **A text-console login while the desktop is running** makes logind mount a
-  fresh `/run/user/1000`, hiding the Wayland and audio sockets. Use the desktop's
-  own terminal instead.
+- **A second, simultaneously active screen.** QEMU gives a second GPU no usable
+  mode (`Display output is not active.`), so the per-screen bar and wallpaper
+  path could not be observed with two live outputs; the single-screen layout and
+  the reconciliation code are what was verified.
+- **A real Wi-Fi association, Bluetooth pairing/audio and a real backlight**
+  remain hardware tests; see the checklist at the end of
+  [docs/session-0.8.md](docs/session-0.8.md) and
+  [docs/hardware-0.6.md](docs/hardware-0.6.md).
+- **Volume against real hardware.** In this VM the only sink is PipeWire's
+  *Dummy Output*, which ignores volume writes, so r8 could not repeat r7's
+  end-to-end 100%→48% sink test; the shell's path (`wpctl set-volume` with the
+  160% ceiling, then a read-back) is unchanged and was verified in r6/r7.
+- **A non-US keyboard layout.** The keymap now loads, but this image is built
+  with a US layout, so a German/French map was not exercised.
 - **The Brave extensions.** They are configured (`normal_installed`, pinned,
   removable) but no running Brave was available to confirm they install, that
   h264ify switches YouTube to H.264, or that ResoWarden holds quality.

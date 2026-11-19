@@ -1,12 +1,16 @@
 #!/bin/sh
-# Start the desktop as the machine's human account, whatever its uid is.
+# Prepare the desktop account's home directory for a real login.
 #
-# Refurbished Linux 0.2 hard-coded User=1000 in refurb-session.service. On a
-# live system with no uid 1000 systemd refused to spawn the unit at all
-# ("Failed at step USER ... status=217/USER"), so the graphical session never
-# started and the screen stayed on the boot menu. Resolving the account here
-# keeps the session independent of which uid the live medium or the installer
-# happened to pick.
+# This used to be the launcher of the whole session: it resolved the account and
+# ran the desktop through runuser from a system unit. The session now starts from
+# the account's own login on tty1 (see /etc/profile.d/zz-refurb-desktop.sh), so
+# all that is left for root to do is the one thing a user cannot do: make the
+# home directory theirs.
+#
+# The image is built without root, so a home directory can end up owned by the
+# account that ran the build. A root-owned ~/.config makes the login shell and
+# the desktop fail in confusing ways, so it is repaired before getty on tty1
+# starts (refurb-session-prepare.service).
 set -eu
 
 target=""
@@ -21,29 +25,20 @@ for uid in $(awk -F: '$3 >= 1000 && $3 < 60000 {print $3}' /etc/passwd | sort -n
 done
 
 if [ -z "$target" ]; then
-    echo "refurb-session: no desktop account with uid >= 1000 exists" >&2
+    echo "refurb-session-prepare: no desktop account with uid >= 1000 exists" >&2
     exit 1
 fi
 
 uid=$(id -u "$target")
 gid=$(id -g "$target")
 home=$(getent passwd "$target" | cut -d: -f6)
-# The image is built without root, so the home directory can end up owned by
-# whoever ran the build. Repair it here: this runs as root, before the session.
+
 if [ -n "$home" ]; then
     [ -d "$home" ] || mkdir -p "$home" 2>/dev/null || true
     # Contents too, not just the directory: a skeleton file left owned by root
-    # makes bash print ".bashrc: Permission denied" on every terminal and hides
-    # the user's own settings.
+    # makes bash print ".bashrc: Permission denied" on every terminal.
     chown -R "$uid:$gid" "$home" 2>/dev/null || chown "$uid:$gid" "$home" 2>/dev/null || true
     chmod 0700 "$home" 2>/dev/null || true
 fi
-export XDG_RUNTIME_DIR=/run/user/$uid
-# pam_systemd normally makes this; a bare unit start does not.
-install -d -m 0700 -o "$target" -g "$gid" "$XDG_RUNTIME_DIR"
 
-echo "refurb-session: starting as $target (uid $uid, home $home)"
-exec runuser -u "$target" -- env \
-    HOME="$home" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-    USER="$target" LOGNAME="$target" \
-    /usr/bin/refurb-session
+echo "refurb-session-prepare: $target (uid $uid) owns $home"

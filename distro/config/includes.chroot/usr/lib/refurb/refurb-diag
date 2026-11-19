@@ -6,11 +6,14 @@
 #   refurb-diag            # writes ~/refurb-diag-<host>-<time>.tar.gz
 #   refurb-diag /tmp/out   # writes into a directory you choose
 #
-# Nothing is uploaded anywhere. The archive contains hardware inventory,
-# driver and firmware messages, the desktop session log, audio and network
-# service state, backlight and input details, resource usage and the last
-# errors of the current boot. Sections that need root report the permission
-# error instead of aborting, so the rest is still collected.
+# Nothing is uploaded anywhere. The archive contains hardware inventory, driver
+# and firmware messages, the desktop session log, audio, network and Bluetooth
+# service state, session and polkit authorization, backlight and input details,
+# resource usage and the last errors of the current boot. Sections that need
+# root report the permission error instead of aborting, so the rest is still
+# collected. No Wi-Fi password, key or credential is included: the pass at the
+# end strips anything that looks like one, and `nmcli` is never asked for
+# secrets.
 set -u
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -52,10 +55,12 @@ say "identity"
     echo "host: $host"
     echo "user: $(id)"
     echo "kernel: $(uname -a)"
-    echo "session: XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-unset} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset}"
+    echo "session: XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-unset} WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset} XDG_SESSION_ID=${XDG_SESSION_ID:-unset}"
     echo "desktop: refurb-shell $(refurb-shell --version 2>/dev/null | sed 's/^refurb-shell //')"
     echo "compositor: $(labwc --version 2>/dev/null | head -1)"
     echo "uptime: $(uptime 2>/dev/null)"
+    echo
+    echo "No password, key or credential is written to this directory."
 } >"$base/00-summary.txt" 2>&1
 run 01-os-release.sh cat /etc/os-release
 run 02-kernel.sh uname -a
@@ -67,6 +72,29 @@ run 12-cpu.sh lscpu
 run 13-dmi.sh dmidecode -t system -t baseboard
 run 14-memory.sh free -m
 run_shell 15-storage.sh 'df -h; echo; lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS 2>/dev/null'
+
+say "session and permissions"
+# The r8 session is a real logind login. These files show whether that is true on
+# this machine and which authorizations follow from it - without them, "polkit
+# said no" cannot be told apart from "there is no session at all".
+run_shell 16-session.sh 'loginctl list-sessions --no-legend; echo; loginctl show-session --property=Id,Type,Class,Active,State,Seat,Remote,TTY,Display,Desktop,Service,Scope 2>/dev/null; echo; echo "-- seat"; loginctl show-seat seat0 --property=Id,ActiveSession,CanGraphical 2>/dev/null'
+run_shell 17-user-instance.sh 'systemctl --user is-system-running 2>&1; echo; systemctl --user list-units --no-pager 2>&1 | head -40; echo; systemctl --user status pipewire.socket wireplumber.service --no-pager -l 2>&1 | head -40'
+run_shell 18-runtime-dir.sh 'ls -l "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" 2>&1'
+# pkcheck asks the authority the same question the desktop asks. Exit 0 means
+# allowed; 1/2/3 mean the authorization failed, which is the failure being
+# reported. Nothing is changed and no password dialog is raised.
+run_shell 19-polkit.sh 'for action in \
+        org.freedesktop.NetworkManager.network-control \
+        org.freedesktop.NetworkManager.enable-disable-wifi \
+        org.freedesktop.NetworkManager.settings.modify.system \
+        org.freedesktop.udisks2.filesystem-mount \
+        org.freedesktop.udisks2.eject-media \
+        org.blueman.rfkill.setstate \
+        org.freedesktop.login1.power-off \
+        org.freedesktop.login1.reboot; do
+    pkcheck --action-id "$action" --process $$ >/dev/null 2>&1
+    printf "%-56s exit %s\n" "$action" "$?"
+done; echo; ls -l /etc/polkit-1/rules.d/ /usr/share/polkit-1/rules.d/ 2>&1'
 
 say "network"
 run 20-rfkill.sh rfkill list
@@ -86,12 +114,20 @@ run 31-wpctl-sink.sh wpctl inspect @DEFAULT_AUDIO_SINK@
 run 32-aplay.sh aplay -l
 run_shell 33-sound-modules.sh 'cat /proc/asound/cards 2>/dev/null; echo; lsmod | grep -E "^snd" | head -30'
 run_shell 34-audio-log.sh 'cat "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/refurb-audio.log" 2>/dev/null; echo; ls -l "${XDG_RUNTIME_DIR:-/tmp}" 2>/dev/null | head -40'
-run_shell 35-audio-processes.sh 'ps -eo pid,user,comm,args | grep -E "pipewire|wireplumber|pulse" | grep -v grep'
+run_shell 35-audio-processes.sh 'ps -eo pid,user,comm,args | grep -E "pipewire|wireplumber|pulse" | grep -v grep; echo; systemctl --user --no-pager status pipewire pipewire-pulse wireplumber 2>&1 | head -30'
+
+say "bluetooth"
+run_shell 36-bt-devices.sh 'bluetoothctl list 2>&1; echo; bluetoothctl devices 2>&1; echo; bluetoothctl show 2>&1'
+run_shell 37-bt-service.sh 'systemctl status bluetooth --no-pager -l 2>&1; echo; busctl tree org.bluez 2>&1 | head -20'
+run_shell 38-bt-log.sh 'journalctl -u bluetooth -b --no-pager 2>&1 | tail -120'
+run_shell 39-bt-modules.sh 'lsmod | grep -i -E "bluetooth|btusb|btintel"; echo; dmesg 2>/dev/null | grep -i -E "bluetooth|hci|firmware" | tail -60'
 
 say "display"
 run 40-wlr-randr.sh wlr-randr
 run_shell 41-drm.sh 'for f in /sys/class/drm/*/status; do printf "%s: %s\n" "$f" "$(cat "$f" 2>/dev/null)"; done'
 run_shell 42-gpu-driver.sh 'lsmod | grep -E "^(i915|amdgpu|nouveau|radeon|virtio_gpu)"; echo; dmesg 2>/dev/null | grep -i -E "i915|amdgpu|nouveau|drm" | tail -60'
+run 43-wayland-info.sh wayland-info
+run_shell 44-renderer.sh 'echo "WLR_RENDERER_ALLOW_SOFTWARE=${WLR_RENDERER_ALLOW_SOFTWARE:-unset}"; echo; dmesg 2>/dev/null | grep -i -E "glx|egl|mesa|softpipe|llvmpipe" | tail -30'
 
 say "backlight"
 {
@@ -119,18 +155,23 @@ say "backlight"
     cat /etc/udev/rules.d/90-refurb-backlight.rules 2>&1
 } >"$base/50-backlight.txt" 2>&1
 
-say "input"
+say "input and keyboard"
 run 51-input-devices.sh cat /proc/bus/input/devices
 run 52-libinput.sh libinput list-devices
 run_shell 53-input-driver.sh 'dmesg 2>/dev/null | grep -i -E "input|keyboard|touchpad|atkbd|psmouse" | tail -60'
 run_shell 54-keymap.sh 'localectl status 2>/dev/null; echo; ls -l /etc/default/keyboard 2>/dev/null; cat /etc/default/keyboard 2>/dev/null; echo; setxkbmap -print 2>/dev/null'
+# Key events as the kernel delivers them. Three seconds, then stop: the tester is
+# asked to press the media and brightness keys during the collection.
+run_shell 55-key-events.sh 'ls -l /dev/input/ 2>&1 | head -20; echo; if [ -r /dev/input/event0 ]; then timeout 3 libinput debug-events --show-keycodes 2>&1 | head -60; else echo "no read access to /dev/input (the account is not in the input group)"; fi'
+run_shell 56-keybinds.sh 'grep -n "XF86\|keybind" /etc/xdg/labwc/rc.xml 2>/dev/null | head -40'
 
 say "desktop session"
 run_shell 60-session-log.sh 'log="${XDG_STATE_HOME:-$HOME/.local/state}/refurb/session.log"; echo "log: $log"; tail -n 300 "$log" 2>/dev/null'
-run 61-session-unit.sh systemctl status refurb-session.service --no-pager -l
-run 62-session-journal.sh journalctl -b -u refurb-session.service --no-pager
+run_shell 61-shell-debug.sh 'tail -n 200 /tmp/refurb-debug.log 2>/dev/null || echo "no REFURB_SHELL_DEBUG log"'
+run_shell 62-shell-journal.sh 'journalctl --user -b --no-pager 2>&1 | tail -200'
 run_shell 63-session-processes.sh 'ps -eo pid,ppid,pcpu,pmem,rss,etime,comm,args --sort=-pcpu | head -30'
-run_shell 64-labwc-config.sh 'for f in /etc/xdg/labwc/rc.xml "$HOME/.config/labwc/rc.xml"; do echo "== $f"; ls -l "$f" 2>&1; sha256sum "$f" 2>&1; grep -n "XF86" "$f" 2>&1; done'
+run_shell 64-labwc-config.sh 'for f in /etc/xdg/labwc/rc.xml "$HOME/.config/labwc/rc.xml"; do echo "== $f"; ls -l "$f" 2>&1; sha256sum "$f" 2>&1; done'
+run_shell 65-notifications.sh 'pgrep -a mako; echo; busctl --user status org.freedesktop.Notifications 2>&1 | head -5; echo; ls -l /etc/xdg/mako/config 2>&1'
 
 say "resources and errors"
 run_shell 70-resources.sh 'free -m; echo; cat /proc/loadavg; echo; cat /proc/pressure/cpu /proc/pressure/io /proc/pressure/memory 2>/dev/null; echo; vmstat 1 3'
@@ -138,15 +179,29 @@ run_shell 71-errors.sh 'journalctl -b -p err --no-pager | tail -120'
 run_shell 72-dmesg.sh 'dmesg | tail -150'
 run_shell 73-oom.sh 'dmesg 2>/dev/null | grep -i -E "oom|killed process"; journalctl -b --no-pager 2>/dev/null | grep -i -E "oom-kill|killed process" | tail -20'
 run_shell 74-coredumps.sh 'command -v coredumpctl >/dev/null 2>&1 && coredumpctl list --no-pager 2>&1 || echo "coredumpctl not installed"'
-run_shell 75-controls.sh 'echo "-- refurb-control show-volume"; refurb-control show-volume; echo "-- wpctl"; wpctl get-volume @DEFAULT_AUDIO_SINK@; echo "-- wpctl available?"; command -v wpctl; echo "-- wob fifo"; ls -l "${XDG_RUNTIME_DIR:-/tmp}/refurb-osd.fifo" 2>&1'
+run_shell 75-controls.sh 'echo "-- refurb-control show-volume"; refurb-control show-volume 2>&1; echo "-- wpctl"; wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1; echo "-- wpctl available?"; command -v wpctl; echo "-- wob fifo"; ls -l "${XDG_RUNTIME_DIR:-/tmp}/refurb-osd.fifo" 2>&1'
 
 say "packages"
-run_shell 80-versions.sh 'for p in labwc pipewire wireplumber network-manager wpasupplicant bluez brightnessctl wob swaylock libxkbcommon0 xkb-data; do printf "%-20s %s\n" "$p" "$(dpkg-query -W -f="\${Version}" "$p" 2>/dev/null || echo missing)"; done'
+run_shell 80-versions.sh 'for p in labwc pipewire wireplumber network-manager wpasupplicant bluez brightnessctl wob swaylock libxkbcommon0 xkb-data mako-notifier blueman nm-connection-editor pavucontrol polkitd libpam-systemd dbus-user-session; do printf "%-22s %s\n" "$p" "$(dpkg-query -W -f="\${Version}" "$p" 2>/dev/null || echo missing)"; done'
+
+# Credentials must never leave the machine, whatever a log happened to print.
+# Every collected text file is scanned for the shapes NetworkManager, wpa_supplicant
+# and Bluetooth pairing use.
+say "removing anything that looks like a credential"
+find "$base" -type f 2>/dev/null | while read -r file; do
+    sed -i -E \
+        -e 's/(psk|password|passwd|wep-key[0-9]?)=[^[:space:]]+/\1=<redacted>/Ig' \
+        -e 's/(private[_-]?key|pre-shared-key)=[^[:space:]]+/\1=<redacted>/Ig' \
+        -e 's/(identity|pin)=[^[:space:]]+/\1=<redacted>/Ig' \
+        "$file" 2>/dev/null || true
+done
 
 archive="$base.tar.gz"
 if tar -czf "$archive" -C "$(dirname "$base")" "$(basename "$base")" 2>/dev/null; then
     printf '\nDiagnostics written to:\n  %s\n  %s\n' "$base" "$archive"
-    printf '\nSend the .tar.gz file; it contains no passwords and nothing is uploaded.\n'
+    printf '\nSend the .tar.gz file; it contains no passwords (credentials are stripped) and\n'
+    printf 'nothing is uploaded. Physical-hardware checks can only be judged from a\n'
+    printf 'collection made on that machine: QEMU results are marked as simulated.\n'
 else
     printf '\nDiagnostics written to: %s\n(could not create a tar.gz; the directory is complete)\n' "$base"
 fi

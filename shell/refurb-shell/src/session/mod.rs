@@ -148,8 +148,10 @@ enum Msg {
     Displays(Vec<ui::DisplayOutput>),
     /// A machine status snapshot, gathered on a worker thread.
     Status(Box<ui::Status>),
-    /// The sink accepted (or refused) the level the user asked for.
-    VolumeApplied(bool),
+    /// The audio worker read the sink back after writing it, so the panel shows
+    /// the level the machine actually has (WirePlumber clamps at 150%) instead
+    /// of the position the slider was dragged to.
+    VolumeApplied(Result<(f32, bool), String>),
     /// The backlight's real level after the change, or why it did not change.
     BrightnessApplied(Result<f32, String>),
 }
@@ -157,6 +159,9 @@ enum Msg {
 pub struct Session {
     conn: Connection,
     qh: QueueHandle<Session>,
+    /// The registry snapshot maintained by wayland-client. Kept so the screen
+    /// list can be re-read on a timer as well as from registry events.
+    globals: wayland_client::globals::GlobalList,
     compositor: wl_compositor::WlCompositor,
     shm: wl_shm::WlShm,
     wm_base: xdg_wm_base::XdgWmBase,
@@ -171,6 +176,10 @@ pub struct Session {
     /// Every display the compositor advertised, in registry order. Each one
     /// gets its own wallpaper and its own bar.
     outputs: Vec<wl_output::WlOutput>,
+    /// Registry name of every bound output. A monitor that is plugged in or
+    /// unplugged while the desktop runs is announced through the registry, and
+    /// the name is the only way to match that announcement to a screen.
+    output_globals: Vec<(u32, wl_output::WlOutput)>,
     /// Put the bar along the bottom edge instead of the top (REFURB_BAR_POSITION=bottom).
     bar_bottom: bool,
     toplevels: Vec<TlEntry>,
@@ -229,7 +238,7 @@ pub fn run() -> Result<(), String> {
     // Bind every screen. A layer shell surface is placed on one output (or on
     // whichever the compositor prefers when none is given), so the shell needs
     // a proxy per screen to put a bar on each of them.
-    let outputs: Vec<wl_output::WlOutput> = {
+    let output_globals: Vec<(u32, wl_output::WlOutput)> = {
         let registry = globals.registry().clone();
         globals
             .contents()
@@ -237,25 +246,38 @@ pub fn run() -> Result<(), String> {
             .into_iter()
             .filter(|global| global.interface == "wl_output")
             .map(|global| {
-                registry.bind::<wl_output::WlOutput, _, _>(
+                let output = registry.bind::<wl_output::WlOutput, _, _>(
                     global.name,
                     global.version.min(4),
                     &qh,
                     (),
-                )
+                );
+                (global.name, output)
             })
             .collect()
     };
+    let outputs: Vec<wl_output::WlOutput> =
+        output_globals.iter().map(|(_, o)| o.clone()).collect();
 
     let (tx, rx) = mpsc::channel();
     let (volume_tx, brightness_tx) = start_control_workers(&tx);
     let now = Instant::now();
+    // The taskbar belongs along the bottom edge of every screen, which is what
+    // this desktop has been asked for since 0.2. It used to need
+    // REFURB_BAR_POSITION=bottom and nothing set it, so every image shipped with
+    // the bar at the top. Bottom is the default now; the variable is only an
+    // escape hatch for anyone who wants the other edge.
     let bar_bottom = std::env::var("REFURB_BAR_POSITION")
-        .map(|value| value.trim().eq_ignore_ascii_case("bottom"))
-        .unwrap_or(false);
+        .map(|value| !value.trim().eq_ignore_ascii_case("top"))
+        .unwrap_or(true);
+    // A seat is normally advertised by the registry; bind it through the global
+    // list when it has not arrived yet. Done before the globals are moved into
+    // the session, which keeps the registry snapshot for later reconciliation.
+    let seat = globals.bind::<wl_seat::WlSeat, _, _>(&qh, 1..=7, ()).ok();
     let mut session = Session {
         conn,
         qh: qh.clone(),
+        globals,
         compositor,
         shm,
         wm_base,
@@ -268,6 +290,7 @@ pub fn run() -> Result<(), String> {
         app: App::new(),
         surfaces: Vec::new(),
         outputs,
+        output_globals,
         bar_bottom,
         toplevels: Vec::new(),
         tx,
@@ -288,9 +311,7 @@ pub fn run() -> Result<(), String> {
         exit: false,
     };
 
-    // A seat is normally advertised by the registry; bind it through the global
-    // list when it has not arrived yet.
-    if let Some(seat) = globals.bind::<wl_seat::WlSeat, _, _>(&qh, 1..=7, ()).ok() {
+    if let Some(seat) = seat {
         session.attach_seat(seat);
     }
     let _ = ftl;
@@ -470,6 +491,12 @@ impl Session {
             next: 0,
             hits: Vec::new(),
         });
+        // Build the click map before the first frame exists, so an input event
+        // that arrives in the same batch as the one that opened this surface is
+        // still matched against the layout the user is about to see.
+        if width > 0 && height > 0 {
+            self.refresh_hits(id, width, height);
+        }
     }
 
     fn open_window(&mut self, kind: WindowKind) {
@@ -538,6 +565,14 @@ impl Session {
                         }
                         self.surfaces[idx].height = height;
                         self.surfaces[idx].configured = false;
+                        // The compositor will not accept a buffer of the new
+                        // size until it has configured the surface, but the
+                        // click map can be rebuilt right now. Without this, a
+                        // click in the part of the panel that only exists after
+                        // the expansion was matched against the old map and
+                        // silently did nothing - the "quick settings ignores
+                        // clicks" report.
+                        self.refresh_hits(Surface::Quick, width, height);
                     }
                     // Take the keyboard when a secret is being typed and give
                     // it straight back when the dialog closes, so typing in an
@@ -679,6 +714,104 @@ impl Session {
             .damage(0, 0, width as i32, height as i32);
         entry.wl.commit();
         true
+    }
+
+    /// Recompute the click map for a surface without committing a frame.
+    ///
+    /// A layer surface may not take a buffer of a new size until the compositor
+    /// has configured it, which leaves a window where the panel looks expanded
+    /// but its hit map still describes the old layout. Rendering only the hit
+    /// map costs a few milliseconds and needs no compositor round trip, so
+    /// clicks are never matched against a stale layout.
+    fn refresh_hits(&mut self, id: Surface, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        if self.entry_index(id).is_none() {
+            return;
+        }
+        let (_, hits) = self.app.render(id, width, height);
+        if let Some(idx) = self.entry_index(id) {
+            self.surfaces[idx].hits = hits;
+        }
+    }
+
+    /// Bring the screen list in line with the compositor's registry.
+    ///
+    /// New outputs are bound and unplugged ones dropped; any change rebuilds the
+    /// per-screen wallpaper and bar. Idempotent, so it is safe on a timer.
+    fn reconcile_outputs(&mut self) {
+        let present: Vec<(u32, u32)> = self
+            .globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|global| global.interface == "wl_output")
+            .map(|global| (global.name, global.version))
+            .collect();
+        if present.len() == self.output_globals.len()
+            && present
+                .iter()
+                .all(|(name, _)| self.output_globals.iter().any(|(n, _)| n == name))
+        {
+            return;
+        }
+        self.output_globals
+            .retain(|(name, _)| present.iter().any(|(n, _)| n == name));
+        for (name, version) in present.iter() {
+            if self.output_globals.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            let registry = self.globals.registry().clone();
+            let output =
+                registry.bind::<wl_output::WlOutput, _, _>(*name, (*version).min(4), &self.qh, ());
+            self.output_globals.push((*name, output));
+        }
+        self.outputs = self
+            .output_globals
+            .iter()
+            .map(|(_, output)| output.clone())
+            .collect();
+        self.note(format!(
+            "{} screen(s) after reconciling the registry",
+            self.outputs.len()
+        ));
+        self.rebuild_screens();
+        self.redraw_visible();
+    }
+
+    /// Rebuild the wallpaper and bar of every screen from the registry's
+    /// current output list. Only monitors being added or removed reaches this,
+    /// so the cost of recreating a handful of layer surfaces is irrelevant.
+    fn rebuild_screens(&mut self) {
+        let stale: Vec<Surface> = self
+            .surfaces
+            .iter()
+            .filter_map(|entry| match entry.id {
+                Surface::Desktop
+                | Surface::Bar
+                | Surface::DesktopOn(_)
+                | Surface::BarOn(_) => Some(entry.id),
+                _ => None,
+            })
+            .collect();
+        for id in stale {
+            self.close_surface(id);
+        }
+        if self.outputs.is_empty() {
+            self.redraw_visible();
+            return;
+        }
+        self.open_layer(Surface::Desktop);
+        self.open_layer(Surface::Bar);
+        let extra = self.outputs.len().saturating_sub(1);
+        for index in 0..extra {
+            let index = index as u32 + 1;
+            self.open_layer(Surface::DesktopOn(index));
+            self.open_layer(Surface::BarOn(index));
+        }
+        self.sync_panels();
+        self.redraw_visible();
     }
 
     /// Repaint the bar on every screen, not just the first one.
@@ -1291,11 +1424,17 @@ impl Session {
                         .unwrap_or(false);
                 self.app.apply_status(*status, keep);
             }
-            Msg::VolumeApplied(ok) => {
-                if !ok {
-                    self.note("the audio sink refused the new volume");
+            Msg::VolumeApplied(result) => match result {
+                Ok((level, muted)) => {
+                    // The value just read back is the truth; only a drag in
+                    // progress is allowed to keep the pointer's position.
+                    if self.drag.is_none() {
+                        self.app.st.status.volume = level;
+                        self.app.st.status.muted = muted;
+                    }
                 }
-            }
+                Err(error) => self.note(error),
+            },
             Msg::BrightnessApplied(result) => match result {
                 Ok(actual) => {
                     // Show what the hardware did, not what was requested.
@@ -1427,6 +1566,11 @@ impl Session {
             other => {
                 let _ = serial;
                 self.dispatch(other);
+                // Apply the effect of the click before the next input event in
+                // this batch is handled. Expanding a section changes the panel's
+                // height, and a click that arrives in the same batch must be
+                // matched against the expanded layout instead of the old one.
+                self.sync_panels();
             }
         }
     }
@@ -1518,6 +1662,12 @@ impl Session {
             if self.app.st.clock != previous {
                 self.redraw_bars();
             }
+            // Monitors can appear or disappear at any time. Registry events are
+            // the primary signal, but on the r8 test image a second GPU's output
+            // never produced one, so the list is also reconciled against the
+            // registry snapshot once a second. Comparing a handful of globals
+            // costs nothing when nothing changed.
+            self.reconcile_outputs();
         }
         if now.duration_since(self.last_status) >= Duration::from_secs(30) {
             self.last_status = now;
@@ -1622,7 +1772,12 @@ fn start_control_workers(tx: &Sender<Msg>) -> (Sender<f32>, Sender<f32>) {
                 level = newer;
             }
             let ok = std::panic::catch_unwind(|| system::set_volume(level)).unwrap_or(false);
-            let _ = volume_msgs.send(Msg::VolumeApplied(ok));
+            let applied = if ok {
+                Ok(system::volume())
+            } else {
+                Err("the audio sink refused the new volume".to_string())
+            };
+            let _ = volume_msgs.send(Msg::VolumeApplied(applied));
         }
     });
 
@@ -1713,13 +1868,56 @@ pub fn send_command(command: &str) -> Result<(), String> {
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Session {
     fn event(
-        _: &mut Self,
-        _: &wl_registry::WlRegistry,
-        _: wl_registry::Event,
+        session: &mut Self,
+        registry: &wl_registry::WlRegistry,
+        event: wl_registry::Event,
         _: &GlobalListContents,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
     ) {
+        // Monitors can be plugged in or unplugged while the desktop is running.
+        // The shell used to bind every screen once at startup and ignore these
+        // events, so a second monitor attached later stayed black and the bar
+        // never appeared on it. Both directions rebuild the per-screen surfaces
+        // from the registry's current output list.
+        match event {
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
+                if interface != "wl_output" {
+                    return;
+                }
+                if session.output_globals.iter().any(|(n, _)| *n == name) {
+                    return;
+                }
+                let output =
+                    registry.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, ());
+                session.output_globals.push((name, output.clone()));
+                session.outputs.push(output);
+                session.note(format!(
+                    "screen connected (global {name}); {} screen(s)",
+                    session.outputs.len()
+                ));
+                session.rebuild_screens();
+            }
+            wl_registry::Event::GlobalRemove { name } => {
+                let Some(pos) = session.output_globals.iter().position(|(n, _)| *n == name) else {
+                    return;
+                };
+                session.output_globals.remove(pos);
+                if pos < session.outputs.len() {
+                    session.outputs.remove(pos);
+                }
+                session.note(format!(
+                    "screen disconnected (global {name}); {} screen(s)",
+                    session.outputs.len()
+                ));
+                session.rebuild_screens();
+            }
+            _ => {}
+        }
     }
 }
 
@@ -1907,12 +2105,29 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Session {
                 if matches!(format, WEnum::Value(wl_keyboard::KeymapFormat::XkbV1)) {
                     use std::io::Read;
                     let mut file = std::fs::File::from(fd);
-                    let mut text = String::new();
-                    let _ = file.take(size as u64).read_to_string(&mut text);
-                    session.keymap = Keymap::from_keymap_string(&text);
+                    // Read the descriptor to its end instead of trusting the
+                    // announced size. A short read used to leave an empty
+                    // string, libxkbcommon then failed to parse it and every
+                    // machine silently got the built-in US layout - which is
+                    // invisible on a US image and wrong on any other layout.
+                    let mut raw = Vec::new();
+                    let _ = file.read_to_end(&mut raw);
+                    if size > 0 && raw.len() > size as usize {
+                        raw.truncate(size as usize);
+                    }
+                    if !raw.is_empty() {
+                        let text = String::from_utf8_lossy(&raw);
+                        let text = match text.find('\0') {
+                            Some(end) => &text[..end],
+                            None => &text[..],
+                        };
+                        session.keymap = Keymap::from_keymap_string(text);
+                    }
                     if !session.keymap.uses_xkb() {
                         eprintln!(
-                            "refurb-shell: libxkbcommon is not available; falling back to a US keymap"
+                            "refurb-shell: could not load the compositor keymap ({} bytes, {} announced); using the built-in US layout",
+                            raw.len(),
+                            size
                         );
                     }
                 }

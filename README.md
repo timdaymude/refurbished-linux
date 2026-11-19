@@ -2,7 +2,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r8) — dark by default, with a bootable ISO.
+Version **0.3.0** (release r9) — dark by default, with a bootable ISO.
 
 Built on Debian 13 “trixie”, but not a Debian with a different wallpaper. The
 desktop is a new shell written from scratch — its own drawing code, its own
@@ -32,12 +32,27 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
-- `refurbished-linux-0.3.0-r8-amd64.iso` builds end to end and is
+- `refurbished-linux-0.3.0-r9-amd64.iso` builds end to end and is
   **929,038,336 bytes** with a published SHA256
-  (`38f428fa5497126e8f436a53c069dbf2cfb3e87e125b5cfe92d2af381bf04a10`). It
+  (`4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e`). It
   carries both a BIOS (`isolinux.bin`) and a UEFI (`boot/grub/efi.img`) boot
-  entry on an isohybrid MBR+GPT layout. The r7 ISO stays published as
-  `refurbished-linux-0.3.0-r7-amd64.iso`.
+  entry on an isohybrid MBR+GPT layout. The r8 and r7 ISOs stay published.
+- **Wi-Fi joins instead of failing on `key-mgmt`** (r9). The panel no longer
+  asks NetworkManager to guess the security method from its scan cache: the
+  scan result decides (`wpa-psk` for WPA2 and transitional APs, `sae` for
+  WPA3-only, `owe`, `none` for open networks, WEP with a WEP key) and the profile
+  is created with exactly that method. Verified in QEMU against a WPA2 access
+  point running in the VM: joining from the panel produced a profile with
+  `802-11-wireless-security.key-mgmt: wpa-psk` instead of the reported
+  `property is missing`, and the passphrase never entered an argument list.
+- **The Wi-Fi status is real** (r9): it is read from the active connection. The
+  old query used an `nmcli` form that failed every time, so the panel said "Not
+  connected" on a working link.
+- **One launcher and usable window controls** (r9): the brand mark is the only
+  launcher, and the decoration is a theme that ships in the image (r8 named a
+  theme that was not installed) with iconify/maximize/close, titlebar
+  double-click, `Super+F`/`Super+Up` to maximize and F11 for full-screen; a
+  maximized window stops above the bar.
 - **The desktop is now a real login session** (r8). It starts from the account's
   own login on tty1, so `pam_systemd` registers a logind session with a seat, an
   `XDG_SESSION_ID`, a systemd user instance and a user D-Bus. Verified on the
@@ -101,6 +116,12 @@ icons, its own font, its own interaction model — running on top of the tiny
   exists in the VM. The row was exercised against a fake
   `/sys/class/backlight`; the crash is addressed structurally (unwind, panic
   hook, `catch_unwind`, worker thread), not reproduced.
+- **The Acer Chromebook's own top-row keys.** Whether brightness and volume
+  reach the compositor as `XF86MonBrightnessUp`/`XF86Audio*` — and whether they
+  arrive as F6–F10 instead — depends on the machine's firmware and EC driver and
+  cannot be reproduced here. `refurb-keys` shows the keycodes the kernel
+  delivers, `refurb-diag` collects the keyboard sections, and `Super+F6`…`F10`
+  run the same brightness/mute/volume commands if the top row does not.
 - **The media keys and `Super` combinations themselves.** QEMU's PS/2 keyboard
   never delivers `XF86Audio*`/`XF86MonBrightness*` keycodes. What is verified is
   the command each binding runs.

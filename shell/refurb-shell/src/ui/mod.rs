@@ -14,7 +14,7 @@ pub mod widgets;
 use tiny_skia::{Color, Pixmap, Rect};
 
 use crate::apps::{self, App as DesktopApp};
-use crate::system::{BtDevice, BtStatus, PowerAction, WifiNetwork};
+use crate::system::{BtDevice, BtStatus, PowerAction, WifiNetwork, WifiSec};
 use crate::text::TextEngine;
 use crate::{icons, render, theme};
 
@@ -185,6 +185,8 @@ pub struct WifiUi {
     pub open: bool,
     pub networks: Vec<WifiNetwork>,
     pub pending: Option<String>,
+    /// Security method of `pending`, from the scan that listed it.
+    pub pending_security: WifiSec,
     pub password: String,
     pub error: Option<String>,
     pub scanning: bool,

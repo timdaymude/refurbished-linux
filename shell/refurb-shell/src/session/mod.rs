@@ -140,6 +140,9 @@ struct TlEntry {
 enum Msg {
     Wifi(Vec<system::WifiNetwork>),
     Connect(Result<(), String>),
+    /// Result of bringing up a profile that was already saved, with its SSID so
+    /// a missing passphrase can turn back into a password prompt.
+    ConnectSaved(String, Result<(), String>),
     Bluetooth(Vec<system::BtDevice>),
     Packages(Vec<ui::Pkg>),
     PackageDone(bool, String),
@@ -1003,8 +1006,21 @@ impl Session {
                     self.app.refresh_status();
                     return;
                 }
-                if net.secured() {
+                let sec = net.sec();
+                if sec.needs_password() {
+                    // A profile saved earlier may already hold the secret, so a
+                    // known network joins without asking again.
+                    if system::saved_wifi(&net.ssid).is_some() {
+                        let ssid = net.ssid.clone();
+                        let tx = self.tx.clone();
+                        std::thread::spawn(move || {
+                            let result = system::connect_saved_wifi(&ssid);
+                            let _ = tx.send(Msg::ConnectSaved(ssid, result));
+                        });
+                        return;
+                    }
                     self.app.st.wifi.pending = Some(net.ssid);
+                    self.app.st.wifi.pending_security = sec;
                     self.app.st.wifi.password.clear();
                     self.app.st.wifi.error = None;
                     self.app.st.focus = Focus::WifiPassword;
@@ -1012,7 +1028,7 @@ impl Session {
                     let ssid = net.ssid.clone();
                     let tx = self.tx.clone();
                     std::thread::spawn(move || {
-                        let result = system::connect_wifi(&ssid, None);
+                        let result = system::connect_wifi(&ssid, sec, None);
                         let _ = tx.send(Msg::Connect(result));
                     });
                 }
@@ -1039,10 +1055,11 @@ impl Session {
                     return;
                 };
                 let password = self.app.st.wifi.password.clone();
+                let sec = self.app.st.wifi.pending_security;
                 self.app.st.wifi.error = None;
                 let tx = self.tx.clone();
                 std::thread::spawn(move || {
-                    let result = system::connect_wifi(&ssid, Some(&password));
+                    let result = system::connect_wifi(&ssid, sec, Some(&password));
                     let _ = tx.send(Msg::Connect(result));
                 });
             }
@@ -1371,6 +1388,37 @@ impl Session {
                     // typed: a typo must be correctable, not a dead end.
                     self.app.st.wifi.error = Some(error);
                     self.app.st.focus = Focus::WifiPassword;
+                }
+            },
+            Msg::ConnectSaved(ssid, result) => match result {
+                Ok(()) => {
+                    self.app.st.wifi.pending = None;
+                    self.app.st.wifi.error = None;
+                    self.app.st.wifi.open = false;
+                    self.app.st.focus = Focus::None;
+                    self.spawn_status_refresh();
+                }
+                Err(error) if system::wants_password(&error) => {
+                    // The saved profile exists but has no usable secret: ask for
+                    // one instead of showing a NetworkManager internal error.
+                    let sec = self
+                        .app
+                        .st
+                        .wifi
+                        .networks
+                        .iter()
+                        .find(|net| net.ssid == ssid)
+                        .map(|net| net.sec())
+                        .unwrap_or(system::WifiSec::WpaPsk);
+                    self.app.st.wifi.pending = Some(ssid);
+                    self.app.st.wifi.pending_security = sec;
+                    self.app.st.wifi.password.clear();
+                    self.app.st.wifi.error = None;
+                    self.app.st.focus = Focus::WifiPassword;
+                }
+                Err(error) => {
+                    self.app.st.wifi.error = Some(error);
+                    self.app.st.focus = Focus::None;
                 }
             },
             Msg::Bluetooth(devices) => {

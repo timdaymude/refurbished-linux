@@ -151,6 +151,45 @@ EOF
     return 1
 }
 
+# logind sets the backlight on behalf of the session's own user. It is the path
+# the firmware's own keys take, it works when the sysfs node is still root-only
+# (before the seat's ACL is applied), and it fails cleanly when there is no
+# backlight at all. On a Chromebook this is usually the only interface that can
+# reach intel_backlight from inside the desktop session.
+brightness_logind() {
+    direction=$1
+    have busctl || return 1
+    [ -n "${XDG_SESSION_ID:-}" ] || return 1
+    while IFS= read -r d; do
+        dev=${d##*/}
+        cur=$(cat "$d/brightness" 2>/dev/null) || continue
+        max=$(cat "$d/max_brightness" 2>/dev/null) || continue
+        { [ -n "$cur" ] && [ "${max:-0}" -gt 0 ]; } || continue
+        step=$((max / 10))
+        [ "$step" -gt 0 ] || step=1
+        if [ "$direction" = up ]; then
+            val=$((cur + step))
+            [ "$val" -le "$max" ] || val=$max
+        else
+            val=$((cur - step))
+            [ "$val" -ge 0 ] || val=0
+        fi
+        # At the end of the range: report success, there is nothing to do.
+        [ "$val" -eq "$cur" ] && return 0
+        busctl call org.freedesktop.login1 /org/freedesktop/login1/session/auto \
+            org.freedesktop.login1.Session SetBrightness ssu \
+            backlight "$dev" "$val" >/dev/null 2>&1 || continue
+        after=$(cat "$d/brightness" 2>/dev/null) || continue
+        if [ "$after" != "$cur" ]; then
+            show_brightness
+            return 0
+        fi
+    done <<EOF
+$(backlight_dirs)
+EOF
+    return 1
+}
+
 brightness() {
     case ${1:-} in
     up | down) direction=$1 ;;
@@ -160,7 +199,11 @@ brightness() {
         ;;
     esac
 
-    # sysfs first: it is the kernel's own interface, needs no extra process and
+    # logind first: it works for the session's own user even when the sysfs node
+    # is not writable, which is what a bare Chromebook looks like.
+    brightness_logind "$direction" && return 0
+
+    # Then sysfs: it is the kernel's own interface, needs no extra process and
     # is writable through the udev rule.
     brightness_sysfs "$direction" && return 0
 

@@ -99,6 +99,7 @@ ln -sf /usr/lib/refurb/refurb-control /usr/local/bin/refurb-control
 # Diagnostics are meant to be typed by whoever is testing the laptop, from a
 # terminal, without knowing where the script lives.
 ln -sf /usr/lib/refurb/refurb-diag /usr/local/bin/refurb-diag
+ln -sf /usr/lib/refurb/refurb-keys /usr/local/bin/refurb-keys
 
 chmod 0440 /etc/sudoers.d/refurb-helpers
 

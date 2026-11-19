@@ -1,0 +1,22 @@
+#!/bin/sh
+# refurb-keys - show what the keyboard actually delivers.
+#
+# The Chromebook top row can reach Linux as XF86 keysyms, as plain F-keys, or as
+# nothing at all depending on the firmware, the EC driver and the model. This
+# window shows the keycodes the kernel delivers, so a key that "does nothing"
+# can be told apart from a key that never arrives.
+#
+#   224 / 225   brightness down / up   -> XF86MonBrightnessDown/Up
+#   113         mute
+#   114 / 115   volume down / up       -> XF86AudioLowerVolume/RaiseVolume
+#   93 .. 97    the top row reported as F6 .. F10
+#
+# Whatever the outcome, Super+F6/F7 (brightness) and Super+F8/F9/F10 (mute,
+# volume) run the same commands, so the machine stays controllable.
+set -u
+
+if [ -r /dev/input/event0 ]; then
+    exec foot -e sh -c 'printf "\n  Press each key that does not work, then close this window.\n\n  224/225 brightness  113 mute  114/115 volume  93-97 = F6-F10\n\n"; exec libinput debug-events --show-keycodes'
+fi
+
+exec foot -e sh -c 'printf "\n  This account cannot read /dev/input, so raw keycodes cannot be shown.\n\n  Still checkable: Super+F6/F7 change the brightness and Super+F8/F9/F10\n  mute and change the volume. If those work, the top row reaches the\n  compositor under a different key - run refurb-diag and send the keyboard\n  sections (51, 55, 57).\n\n  Press Enter to close.\n"; read -r _'

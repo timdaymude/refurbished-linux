@@ -1,0 +1,67 @@
+# Refurbished Linux window decoration.
+#
+# The shell draws its own dark panels, so the server-side decoration labwc draws
+# around application windows uses the same palette instead of the stock grey.
+# The button layout itself (icon:iconify,max,close) is set in rc.xml.
+#
+# r8 asked for a "Clearlooks" theme that is not installed in the image, so labwc
+# silently fell back to its own decoration and the titlebar buttons did not
+# match anything we had configured. This theme ships in the image, so the name
+# in rc.xml now resolves.
+
+window.titlebar.height: 32
+window.button.width: 26
+window.button.height: 26
+window.button.spacing: 0
+window.label.text.justify: Center
+window.handle.width: 0
+window.border.width: 1
+
+# active window
+window.active.title.bg: flat solid
+window.active.title.bg.color: #262C34
+window.active.label.text.color: #ECEEF2
+window.active.border.color: #2E3440
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #262C34
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #262C34
+
+# inactive window
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #1C2027
+window.inactive.label.text.color: #A7AEBB
+window.inactive.border.color: #262C34
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #1C2027
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #1C2027
+
+# titlebar buttons: legible on the dark titlebar, teal on hover so it is
+# obvious they can be clicked.
+window.active.button.unpressed.image.color: #C6CCD6
+window.active.button.hover.image.color: #35C2A3
+window.active.button.pressed.image.color: #8FE9D2
+window.active.button.disabled.image.color: #5A6270
+window.active.button.iconify.unpressed.image.color: #A7AEBB
+window.active.button.iconify.hover.image.color: #35C2A3
+window.active.button.max.unpressed.image.color: #C6CCD6
+window.active.button.max.hover.image.color: #35C2A3
+window.active.button.max.toggled.unpressed.image.color: #8FE9D2
+window.active.button.close.unpressed.image.color: #C6CCD6
+window.active.button.close.hover.image.color: #E08B8B
+
+window.inactive.button.unpressed.image.color: #6C7484
+window.inactive.button.hover.image.color: #A7AEBB
+window.inactive.button.iconify.unpressed.image.color: #6C7484
+window.inactive.button.max.unpressed.image.color: #6C7484
+window.inactive.button.close.unpressed.image.color: #6C7484
+
+# menus and tooltips drawn by GTK/labwc follow the same surface colours
+menu.items.bg.color: #20242B
+menu.items.text.color: #ECEEF2
+menu.items.active.bg.color: #35C2A3
+menu.items.active.text.color: #12161B
+menu.border.color: #2E3440
+menu.title.bg.color: #262C34
+menu.title.text.color: #ECEEF2

@@ -1,4 +1,4 @@
-//! The top bar: brand, application menu, taskbar, status and clock.
+//! The bar: brand (the launcher), taskbar, status and clock.
 
 use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
 use crate::{icons, render, theme};
@@ -18,33 +18,12 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
         theme::card(),
         2.2,
     );
-    cx.hit(render::rect(6.0, 0.0, 27.0, h), Action::LauncherOpen);
+    // The brand mark is the one application launcher. A second "Applications"
+    // button sat next to it and opened the same menu, which read as two
+    // launchers that did not obviously do the same thing.
+    cx.hit(render::rect(4.0, 0.0, chip.width() + 12.0, h), Action::LauncherOpen);
 
-    // ---- application menu button -----------------------------------------
-    let btn = render::rect(chip.right() + 7.0, 3.0, 112.0, h - 6.0);
-    let hot = cx.hot(btn);
-    if hot {
-        render::round(cx.pm, btn, theme::RADIUS_SM, theme::accent_soft());
-    }
-    let icon = render::rect(btn.x() + 9.0, btn.y() + (btn.height() - 15.0) / 2.0, 15.0, 15.0);
-    cx.glyph(
-        icons::Glyph::Grid,
-        icon,
-        if hot { theme::accent_deep() } else { theme::ink_soft() },
-        2.0,
-    );
-    cx.t(
-        icon.right() + 7.0,
-        btn.y(),
-        btn.height(),
-        "Applications",
-        theme::T_BAR,
-        MEDIUM,
-        if hot { theme::accent_deep() } else { theme::ink() },
-    );
-    cx.hit(btn, Action::LauncherOpen);
-
-    let mut left = btn.right() + 10.0;
+    let mut left = chip.right() + 12.0;
 
     // ---- status cluster (laid out from the right) ------------------------
     let mut right = w - 6.0;

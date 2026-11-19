@@ -6,7 +6,7 @@
 //! client, no polling daemon and no state kept after the shell exits. Calls
 //! are made when the user opens a panel and on a slow background refresh.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,82 @@ impl WifiNetwork {
     pub fn secured(&self) -> bool {
         !self.security.is_empty() && self.security != "--"
     }
+
+    pub fn sec(&self) -> WifiSec {
+        WifiSec::from_scan(&self.security)
+    }
+}
+
+/// How a network's access point says it authenticates.
+///
+/// `nmcli device wifi connect` is normally left to work this out from its scan
+/// cache, and that is exactly what failed on physical hardware: NetworkManager
+/// wrote a profile with no `key-mgmt` at all and activating it died with
+/// "802-11-wireless-security.key-mgmt: property is missing". The method is
+/// therefore decided here, from the scan result, and written into the profile
+/// we create. One method is never forced on every network: an open network
+/// gets no security section, WPA2-Personal gets `wpa-psk`, WPA3-only gets
+/// `sae`, OWE gets `owe` and WEP gets `none` with a WEP key.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WifiSec {
+    #[default]
+    Open,
+    WpaPsk,
+    Sae,
+    Owe,
+    Wep,
+    /// 802.1X/EAP: needs an identity and a certificate, not a passphrase.
+    Enterprise,
+}
+
+impl WifiSec {
+    /// Read the `SECURITY` column of `nmcli -t -f SECURITY device wifi list`.
+    pub fn from_scan(security: &str) -> WifiSec {
+        let s = security.trim().to_ascii_uppercase();
+        if s.is_empty() || s == "--" {
+            return WifiSec::Open;
+        }
+        if s.contains("802.1X") || s.contains("EAP") {
+            return WifiSec::Enterprise;
+        }
+        if s.contains("OWE") {
+            return WifiSec::Owe;
+        }
+        // "WPA3" alone is SAE-only; "WPA2 WPA3" is a transitional AP, which
+        // still accepts a pre-shared key.
+        if s.contains("WPA3") && !s.contains("WPA2") && !s.contains("WPA1") {
+            return WifiSec::Sae;
+        }
+        if s.contains("WPA") {
+            return WifiSec::WpaPsk;
+        }
+        if s.contains("WEP") {
+            return WifiSec::Wep;
+        }
+        // Marked secure but with an unfamiliar label: a pre-shared key is the
+        // only thing the panel can ask for, and it is right far more often
+        // than leaving the profile without a security method.
+        WifiSec::WpaPsk
+    }
+
+    /// The value of `802-11-wireless-security.key-mgmt`.
+    pub fn key_mgmt(&self) -> Option<&'static str> {
+        match self {
+            WifiSec::Open => None,
+            WifiSec::WpaPsk => Some("wpa-psk"),
+            WifiSec::Sae => Some("sae"),
+            WifiSec::Owe => Some("owe"),
+            WifiSec::Wep => Some("none"),
+            WifiSec::Enterprise => Some("wpa-eap"),
+        }
+    }
+
+    pub fn needs_password(&self) -> bool {
+        matches!(
+            self,
+            WifiSec::WpaPsk | WifiSec::Sae | WifiSec::Wep | WifiSec::Enterprise
+        )
+    }
 }
 
 /// NetworkManager is the only network service in the image; if it is absent
@@ -135,24 +211,74 @@ fn wifi_list_args(base: &[&str], interface: Option<&str>) -> Vec<String> {
     args
 }
 
+/// The network the machine is actually joined to, if any.
+///
+/// Read from the active connections rather than from the scan list. The old
+/// version asked `nmcli device wifi` for the `IN-USE` column, which fails
+/// outright ("argument 'ifname' not understood"), so the bar and the panel said
+/// "Not connected" while a link was up. The scan list is not a substitute
+/// either: with `ifname` it drops the `*` marker for the network in use. The
+/// active connection is the thing the user is asking about.
 pub fn wifi_status() -> Option<WifiStatus> {
+    let client = wifi_client_interface();
+    let out = run(
+        "nmcli",
+        &[
+            "-t",
+            "-f",
+            "NAME,TYPE,DEVICE",
+            "connection",
+            "show",
+            "--active",
+        ],
+    )?;
+    // A machine can run a hotspot of its own, which is also a wireless
+    // connection: report the station interface, and only fall back to any
+    // wireless connection when there is no managed interface to prefer.
+    let mut other: Option<String> = None;
+    for line in out.lines() {
+        let fields = split_t(line);
+        if fields.len() < 3 || !fields[1].contains("wireless") {
+            continue;
+        }
+        if let Some(client) = &client {
+            if &fields[2] != client {
+                if other.is_none() {
+                    other = Some(fields[0].clone());
+                }
+                continue;
+            }
+        }
+        return Some(WifiStatus {
+            strength: wifi_signal(&fields[0]).unwrap_or(0),
+            ssid: fields[0].clone(),
+        });
+    }
+    other.map(|ssid| WifiStatus {
+        strength: wifi_signal(&ssid).unwrap_or(0),
+        ssid,
+    })
+}
+
+/// Signal strength of a network from the scan list, for the bar icon.
+fn wifi_signal(ssid: &str) -> Option<u8> {
     let interface = wifi_client_interface();
     let args = wifi_list_args(
-        &["-t", "-f", "IN-USE,SSID,SIGNAL", "device", "wifi"],
+        &["-t", "-f", "SSID,SIGNAL", "device", "wifi", "list"],
         interface.as_deref(),
     );
     let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let out = run("nmcli", &argv)?;
-    for line in out.lines() {
-        let f = split_t(line);
-        if f.len() >= 3 && f[0].trim() == "*" {
-            return Some(WifiStatus {
-                ssid: f[1].clone(),
-                strength: f[2].trim().parse().unwrap_or(0),
-            });
-        }
-    }
-    None
+    out.lines()
+        .filter_map(|line| {
+            let fields = split_t(line);
+            if fields.len() >= 2 && fields[0] == ssid {
+                fields[1].trim().parse::<u8>().ok()
+            } else {
+                None
+            }
+        })
+        .max()
 }
 
 pub fn wifi_enabled() -> bool {
@@ -209,60 +335,250 @@ pub fn scan_wifi() -> Vec<WifiNetwork> {
     nets
 }
 
-/// Connect to a network.
-///
-/// The password is passed as an argument rather than through a shell, so no
-/// quoting or escaping can corrupt it: spaces, `$`, `!`, quotes and non-ASCII
-/// characters reach NetworkManager exactly as they were typed. The reason the
-/// network does not come up is returned to the caller instead of being thrown
-/// away, so the panel can say what actually failed.
-pub fn connect_wifi(ssid: &str, password: Option<&str>) -> Result<(), String> {
-    if !have("nmcli") {
-        return Err("NetworkManager is not installed.".into());
-    }
-    let mut args: Vec<String> = vec![
-        "device".into(),
-        "wifi".into(),
-        "connect".into(),
-        ssid.into(),
-    ];
-    if let Some(pw) = password {
-        args.push("password".into());
-        args.push(pw.into());
-    }
+/// Run `nmcli` and turn a failure into the reason it printed.
+fn nmcli(args: &[String]) -> Result<(), String> {
     let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let out = Command::new("nmcli")
         .args(&argv)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output();
-    match out {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => {
-            let mut text = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            if text.is_empty() {
-                text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            }
-            // nmcli prints several lines; the first one is the actual reason.
-            let reason = text
-                .lines()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or("NetworkManager refused the connection.")
-                .trim()
-                .replace("Error: ", "");
-            // "already active" is a success in disguise: the profile worked.
-            if reason.contains("already active") {
-                return Ok(());
-            }
-            Err(if reason.chars().count() > 120 {
-                reason.chars().take(120).collect::<String>() + "…"
-            } else {
-                reason
-            })
-        }
-        Err(e) => Err(format!("Could not run nmcli: {e}")),
+        .output()
+        .map_err(|e| format!("Could not run nmcli: {e}"))?;
+    if out.status.success() {
+        return Ok(());
     }
+    let mut text = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if text.is_empty() {
+        text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    }
+    // nmcli prints several lines; the first one is the actual reason.
+    let reason = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("NetworkManager refused the connection.")
+        .trim_start_matches("Error: ")
+        .to_string();
+    Err(if reason.chars().count() > 160 {
+        reason.chars().take(160).collect::<String>() + "…"
+    } else {
+        reason
+    })
+}
+
+/// The `nmcli connection add|modify` arguments for this network.
+///
+/// NetworkManager's keyfile plugin only accepts files owned by root, so a
+/// desktop user cannot hand the daemon a profile file: a user-written keyfile is
+/// rejected with "no settings plugin could load". The profile is therefore
+/// created through NetworkManager's own D-Bus API, which is what the polkit rule
+/// for `settings.modify.system` exists for. The security method is always named
+/// explicitly; nothing is left for NetworkManager to infer from its scan cache.
+fn profile_args(ssid: &str, sec: WifiSec, exists: bool) -> Vec<String> {
+    let mut args: Vec<String> = vec!["connection".into()];
+    if exists {
+        args.push("modify".into());
+        args.push(ssid.into());
+        args.push("connection.autoconnect".into());
+        args.push("yes".into());
+        match sec.key_mgmt() {
+            Some(key_mgmt) => {
+                args.push("802-11-wireless-security.key-mgmt".into());
+                args.push(key_mgmt.into());
+            }
+            // Open network: drop the security an earlier attempt left behind.
+            None => {
+                for property in [
+                    "802-11-wireless-security.key-mgmt",
+                    "802-11-wireless-security.psk",
+                    "802-11-wireless-security.wep-key0",
+                ] {
+                    args.push(format!("-{property}"));
+                }
+            }
+        }
+    } else {
+        args.push("add".into());
+        args.push("type".into());
+        args.push("wifi".into());
+        args.push("con-name".into());
+        args.push(ssid.into());
+        args.push("802-11-wireless.ssid".into());
+        args.push(ssid.into());
+        args.push("802-11-wireless.mode".into());
+        args.push("infrastructure".into());
+        args.push("connection.autoconnect".into());
+        args.push("yes".into());
+        if let Some(key_mgmt) = sec.key_mgmt() {
+            args.push("802-11-wireless-security.key-mgmt".into());
+            args.push(key_mgmt.into());
+        }
+    }
+    if sec == WifiSec::Wep {
+        args.push("802-11-wireless-security.wep-key-type".into());
+        args.push("1".into());
+    }
+    args
+}
+
+/// One line for `nmcli connection up … passwd-file`, which is the only way to
+/// hand NetworkManager a secret without putting it in an argument list.
+fn secret_line(sec: WifiSec, password: &str) -> Result<String, String> {
+    if password.contains('\n') || password.contains('\r') {
+        return Err("That password contains a line break.".into());
+    }
+    let property = match sec {
+        WifiSec::Wep => "802-11-wireless-security.wep-key0",
+        _ => "802-11-wireless-security.psk",
+    };
+    Ok(format!("{property}:{password}\n"))
+}
+
+/// Write the 0600 file `nmcli` reads its secret from, removed after activation.
+fn write_secret_file(sec: WifiSec, password: &str) -> Result<PathBuf, String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let line = secret_line(sec, password)?;
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let path = dir.join(format!("refurb-wifi-{}.passwd", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| format!("Could not write the password file: {e}"))?;
+    file.write_all(line.as_bytes())
+        .map_err(|e| format!("Could not write the password file: {e}"))?;
+    Ok(path)
+}
+
+/// Connect to a network through a profile with an explicit security method.
+///
+/// The reason the network does not come up is returned to the caller instead of
+/// being thrown away, so the panel can say what actually failed.
+pub fn connect_wifi(ssid: &str, sec: WifiSec, password: Option<&str>) -> Result<(), String> {
+    if !have("nmcli") {
+        return Err("NetworkManager is not installed.".into());
+    }
+    if sec == WifiSec::Enterprise {
+        return Err(
+            "This network uses an enterprise login. Open Network settings to enter it.".into(),
+        );
+    }
+    let password = password.filter(|p| !p.is_empty());
+    if sec.needs_password() && password.is_none() {
+        return Err("This network needs a password.".into());
+    }
+
+    let created = saved_wifi(ssid).is_none();
+    nmcli(&profile_args(ssid, sec, !created))?;
+
+    let secret = match (sec.needs_password(), password) {
+        (true, Some(password)) => Some(write_secret_file(sec, password)?),
+        _ => None,
+    };
+    let mut args: Vec<String> = vec![
+        "--wait".into(),
+        "30".into(),
+        "connection".into(),
+        "up".into(),
+        ssid.into(),
+    ];
+    if let Some(path) = &secret {
+        args.push("passwd-file".into());
+        args.push(path.to_string_lossy().into_owned());
+    }
+    let result = nmcli(&args);
+    // The password file only has to outlive the activation.
+    if let Some(path) = secret {
+        let _ = std::fs::remove_file(path);
+    }
+    match result {
+        Ok(()) => Ok(()),
+        // "already active" is a success in disguise: the profile worked.
+        Err(reason) if reason.contains("already active") => Ok(()),
+        // The wait expired, but the link may have come up just after it. Ask
+        // NetworkManager before telling the user it failed.
+        Err(reason) if activation_timeout(&reason) && wifi_active(ssid) => Ok(()),
+        Err(reason) => {
+            // Remove only what this attempt created; a profile the user saved
+            // themselves stays theirs.
+            if created {
+                let _ = nmcli(&["connection".into(), "delete".into(), ssid.into()]);
+            }
+            // A wrong key ends the four-way handshake and NetworkManager
+            // reports missing secrets. Say what actually happened.
+            if wants_password(&reason) {
+                return Err("That password was not accepted.".into());
+            }
+            Err(reason)
+        }
+    }
+}
+
+/// A saved NetworkManager profile for this SSID, if the machine has one.
+pub fn saved_wifi(ssid: &str) -> Option<String> {
+    let out = run("nmcli", &["-t", "-f", "NAME,TYPE", "connection", "show"])?;
+    for line in out.lines() {
+        let fields = split_t(line);
+        if fields.len() >= 2 && fields[1].contains("wireless") && fields[0] == ssid {
+            return Some(fields[0].clone());
+        }
+    }
+    None
+}
+
+/// Bring up a profile that is already saved, without asking for a password.
+pub fn connect_saved_wifi(ssid: &str) -> Result<(), String> {
+    if !have("nmcli") {
+        return Err("NetworkManager is not installed.".into());
+    }
+    nmcli(&[
+        "--wait".into(),
+        "30".into(),
+        "connection".into(),
+        "up".into(),
+        "id".into(),
+        ssid.into(),
+    ])
+}
+
+/// Is this connection up right now?
+///
+/// Used after `nmcli` times out: on a slow machine the association can finish
+/// after the wait expires, and a panel that reports a failure over a working link
+/// is worse than the wait being long.
+pub fn wifi_active(ssid: &str) -> bool {
+    run(
+        "nmcli",
+        &["-t", "-f", "NAME", "connection", "show", "--active"],
+    )
+    .map(|out| {
+        out.lines()
+            .any(|line| split_t(line).first().map(|name| name == ssid).unwrap_or(false))
+    })
+    .unwrap_or(false)
+}
+
+/// Did `nmcli` give up waiting rather than fail?
+pub fn activation_timeout(reason: &str) -> bool {
+    let text = reason.to_ascii_lowercase();
+    text.contains("timeout expired") || text.contains("timed out")
+}
+
+/// Did activation fail because the saved profile has no stored secret?
+///
+/// That is the one failure worth turning back into a password prompt; any other
+/// reason (no carrier, wrong key, AP gone) is shown to the user as it is.
+pub fn wants_password(reason: &str) -> bool {
+    let text = reason.to_ascii_lowercase();
+    text.contains("secrets were required")
+        || text.contains("no secrets")
+        || (text.contains("secret") && text.contains("required"))
 }
 
 pub fn disconnect_wifi() {
@@ -892,6 +1208,73 @@ pub fn hostname() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn security_methods_follow_the_scan_result() {
+        assert_eq!(WifiSec::from_scan("--"), WifiSec::Open);
+        assert_eq!(WifiSec::from_scan(""), WifiSec::Open);
+        assert_eq!(WifiSec::from_scan("WPA2"), WifiSec::WpaPsk);
+        assert_eq!(WifiSec::from_scan("WPA1 WPA2"), WifiSec::WpaPsk);
+        assert_eq!(WifiSec::from_scan("WPA3"), WifiSec::Sae);
+        // A transitional access point still accepts a pre-shared key.
+        assert_eq!(WifiSec::from_scan("WPA2 WPA3"), WifiSec::WpaPsk);
+        assert_eq!(WifiSec::from_scan("WPA2 802.1X"), WifiSec::Enterprise);
+        assert_eq!(WifiSec::from_scan("WEP"), WifiSec::Wep);
+        assert_eq!(WifiSec::from_scan("OWE"), WifiSec::Owe);
+    }
+
+    #[test]
+    fn profiles_always_name_a_security_method() {
+        let wpa = profile_args("Cafe Net", WifiSec::WpaPsk, false);
+        assert!(wpa
+            .windows(2)
+            .any(|w| w[0] == "802-11-wireless-security.key-mgmt" && w[1] == "wpa-psk"));
+        assert!(wpa
+            .windows(2)
+            .any(|w| w[0] == "802-11-wireless.ssid" && w[1] == "Cafe Net"));
+
+        let sae = profile_args("Wpa3 Only", WifiSec::Sae, false);
+        assert!(sae
+            .windows(2)
+            .any(|w| w[0] == "802-11-wireless-security.key-mgmt" && w[1] == "sae"));
+
+        let open = profile_args("Free Wifi", WifiSec::Open, false);
+        assert!(!open
+            .iter()
+            .any(|arg| arg == "802-11-wireless-security.key-mgmt"));
+
+        // Switching a saved network back to open drops the old secrets.
+        let reopened = profile_args("Free Wifi", WifiSec::Open, true);
+        assert!(reopened
+            .iter()
+            .any(|arg| arg == "-802-11-wireless-security.psk"));
+        assert!(reopened
+            .iter()
+            .any(|arg| arg == "-802-11-wireless-security.key-mgmt"));
+    }
+
+    #[test]
+    fn a_timed_out_wait_is_not_a_failure_by_itself() {
+        assert!(activation_timeout("Timeout expired (30 seconds)"));
+        assert!(activation_timeout("Connection activation timed out"));
+        assert!(!activation_timeout("Secrets were required, but not provided"));
+    }
+
+    #[test]
+    fn secrets_never_reach_an_argument_list() {
+        assert_eq!(
+            secret_line(WifiSec::WpaPsk, "pa ss$word").unwrap(),
+            "802-11-wireless-security.psk:pa ss$word\n"
+        );
+        assert_eq!(
+            secret_line(WifiSec::Wep, "abcde").unwrap(),
+            "802-11-wireless-security.wep-key0:abcde\n"
+        );
+        assert!(secret_line(WifiSec::WpaPsk, "line\nbreak").is_err());
+        for arg in profile_args("Cafe Net", WifiSec::WpaPsk, false) {
+            assert!(!arg.contains("pa ss$word"));
+        }
+    }
 
     #[test]
     fn splits_escaped_nmcli_output() {

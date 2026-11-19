@@ -164,6 +164,11 @@ run_shell 54-keymap.sh 'localectl status 2>/dev/null; echo; ls -l /etc/default/k
 # asked to press the media and brightness keys during the collection.
 run_shell 55-key-events.sh 'ls -l /dev/input/ 2>&1 | head -20; echo; if [ -r /dev/input/event0 ]; then timeout 3 libinput debug-events --show-keycodes 2>&1 | head -60; else echo "no read access to /dev/input (the account is not in the input group)"; fi'
 run_shell 56-keybinds.sh 'grep -n "XF86\|keybind" /etc/xdg/labwc/rc.xml 2>/dev/null | head -40'
+# What the compositor itself was given: an XKB variable that changes the layout
+# or a missing keymap root explains keys that never reach a binding.
+run_shell 57-labwc-env.sh 'p=$(pgrep -x labwc 2>/dev/null | head -1); echo "labwc pid: ${p:-none}"; [ -n "$p" ] && tr "\\0" "\\n" < "/proc/$p/environ" 2>/dev/null | grep -i -E "xkb|keymap|wayland_display|xdg_session|xdg_runtime"'
+run_shell 58-backlight-values.sh 'for d in /sys/class/backlight/*; do echo "== $d"; ls -l "$d" 2>&1; printf "brightness="; cat "$d/brightness" 2>&1; printf "max="; cat "$d/max_brightness" 2>&1; done'
+run_shell 59-keyprobe.sh 'echo "Run refurb-keys in the desktop and press the keys that do not work:"; echo "its keycode lines, plus the table below, say whether the key reaches the compositor."; echo; echo "  224 brightness down   225 brightness up   (XF86MonBrightnessDown/Up)"; echo "  113 mute             114 volume down      115 volume up     (XF86Audio*)"; echo "  93  F6  94 F7  95 F8  96 F9  97 F10 (top row in F-key mode: use Super+F6..F10)"; echo; command -v wev || echo "wev not installed (libinput keycodes are collected above)"'
 
 say "desktop session"
 run_shell 60-session-log.sh 'log="${XDG_STATE_HOME:-$HOME/.local/state}/refurb/session.log"; echo "log: $log"; tail -n 300 "$log" 2>/dev/null'

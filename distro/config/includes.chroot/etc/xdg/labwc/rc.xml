@@ -17,7 +17,16 @@
   </placement>
 
   <theme>
-    <name>Clearlooks</name>
+    <!-- This theme ships in the image (usr/share/themes/refurb). The r8 image
+         asked for "Clearlooks", which is not installed, so labwc fell back to
+         its own decoration and the titlebar buttons were not the ones described
+         here. The layout spells the maximize button out instead of relying on a
+         default. -->
+    <name>refurb</name>
+    <titlebar>
+      <layout>icon:iconify,max,close</layout>
+      <showTitle>yes</showTitle>
+    </titlebar>
     <cornerRadius>8</cornerRadius>
     <font place="ActiveWindow">
       <name>Inter</name><size>10</size><weight>normal</weight>
@@ -65,6 +74,21 @@
     <keybind key="W-f">
       <action name="ToggleMaximize" />
     </keybind>
+    <!-- Maximate/restore and true full-screen are different things and both
+         are reachable without hunting for a button: Super+Up/Down resize to
+         the working area (above the bar), F11 removes the decorations. -->
+    <keybind key="W-Up">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="UnMaximize" />
+    </keybind>
+    <keybind key="F11">
+      <action name="ToggleFullscreen" />
+    </keybind>
+    <keybind key="W-F11">
+      <action name="ToggleFullscreen" />
+    </keybind>
     <keybind key="A-Tab">
       <action name="NextWindow" />
     </keybind>
@@ -97,10 +121,38 @@
     <keybind key="XF86MonBrightnessDown">
       <action name="Execute"><command>/usr/lib/refurb/refurb-control brightness down</command></action>
     </keybind>
+    <!-- Fallbacks for keyboards whose top row does not reach the compositor as
+         XF86 keysyms. A Chromebook's top row is back, forward, refresh,
+         fullscreen, overview, brightness down, brightness up, mute, volume down,
+         volume up; when the firmware reports them as F-keys the numbers below
+         match that order. Super is used so the plain F-keys stay with the
+         application. -->
+    <keybind key="W-F6">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-control brightness down</command></action>
+    </keybind>
+    <keybind key="W-F7">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-control brightness up</command></action>
+    </keybind>
+    <keybind key="W-F8">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-control mute</command></action>
+    </keybind>
+    <keybind key="W-F9">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-control volume down</command></action>
+    </keybind>
+    <keybind key="W-F10">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-control volume up</command></action>
+    </keybind>
   </keyboard>
 
   <mouse>
     <default />
+    <!-- Double-clicking a titlebar maximizes and restores, the way it does on
+         every other desktop. -->
+    <context name="Titlebar">
+      <mousebind button="Left" action="DoubleClick">
+        <action name="ToggleMaximize" />
+      </mousebind>
+    </context>
     <context name="Frame">
       <mousebind button="A-Left" action="Press">
         <action name="Focus" />

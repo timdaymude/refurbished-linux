@@ -25,8 +25,8 @@ icons, its own font, its own interaction model — running on top of the tiny
 | `shell/refurb-shell/` | The desktop shell: a Rust program that draws the bar, launcher, quick settings, software manager and settings windows itself, and takes over the session after `labwc`. |
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
-| `scripts/` | Build and measurement scripts. |
-| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), the session rewrite (0.8), design, memory budget, test protocol, limitations, Windows-migration notes. |
+| `scripts/` | Build and measurement scripts. `scripts/clean.sh` reclaims the build output once an image is verified. |
+| `docs/` | ISO build guide, release reports, hardware findings (0.4, 0.5, 0.6), component integration (0.7), the session rewrite (0.8), design, memory budget, test protocol, limitations, Windows-migration notes, and `releases.md` — every image built, its SHA256 and where a copy lives. |
 
 ## Status: read this before trusting anything
 

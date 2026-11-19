@@ -51,7 +51,7 @@ for f in common package-lists/refurb-base.list.chroot \
          hooks/normal/0100-identity.hook.chroot hooks/normal/0200-no-background-work.hook.chroot \
          includes.chroot/usr/share/wayland-sessions/refurb.desktop \
          includes.chroot/etc/xdg/labwc/rc.xml \
-         includes.chroot/usr/lib/systemd/system/refurb-session.service; do
+         includes.chroot/usr/lib/systemd/system/refurb-session-prepare.service; do
     [ -s "$DISTRO/config/$f" ] && ok "config/$f" || err "config/$f missing or empty"
 done
 

@@ -81,3 +81,28 @@ KVM is not available in this workspace), with the serial port on a socket:
 
 With software emulation a boot to the login prompt takes roughly three minutes
 on two emulated cores.
+
+## Reclaiming disk space
+
+A full build leaves about 4 GB of regenerable material behind: the debootstrap
+chroot and the staged ISO tree in `.build/`, the host toolchain in `.toolbox/`
+and the compiler output in `shell/refurb-shell/target/`. None of it is source,
+and all of it is in `.gitignore`. Clear it once an image is built and its
+checksum is recorded:
+
+    ./scripts/clean.sh --dry-run    # list what would go
+    ./scripts/clean.sh              # ~3.5 GB back; the newest ISO stays
+
+The script refuses to run while a build is in progress, and refuses to delete
+any path that git does not already ignore, so a source file cannot be caught by
+mistake. It always keeps the newest ISO and its `.sha256`. Older ISOs are only
+dropped when `releases/*.sha256` already records their checksum, so a published
+image never loses its last local reference.
+
+**The uploaded release is the backup.** Before deleting a local ISO at all,
+confirm the release asset is the same bytes:
+
+    gh release view v0.3.0-r9 --json assets -q '.assets[] | "\(.name) \(.size)"'
+    sha256sum refurbished-linux-0.3.0-r9-amd64.iso
+
+A rebuild needs the full ~6 GB again, so leave room for it before starting.

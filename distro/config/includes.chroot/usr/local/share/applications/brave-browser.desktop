@@ -3,7 +3,9 @@ Type=Application
 Name=Brave
 GenericName=Web Browser
 Comment=Fast, private web browser
-Exec=brave-browser %U
+# VA-API: let Chromium decode video on the GPU instead of in software. On a
+# dual-core machine without it, a 720p video is most of the CPU.
+Exec=brave-browser --enable-features=VaapiVideoDecodeLinuxGL %U
 Icon=brave-browser
 Terminal=false
 Categories=Network;WebBrowser;

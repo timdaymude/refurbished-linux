@@ -203,6 +203,10 @@ fn desktop_with(app: &mut App, w: u32, h: u32, overlays: &[Surface]) -> Pixmap {
                 let (pm, _) = app.render(Surface::Launcher, w, h);
                 paint(&mut base, &pm, 0, 0);
             }
+            Surface::Dialog => {
+                let (pm, _) = app.render(Surface::Dialog, w, h);
+                paint(&mut base, &pm, 0, 0);
+            }
             Surface::Quick => {
                 let qh = ui::quick::height(&app.st);
                 let qw = ui::quick::CARD_W as u32 + 8;
@@ -337,6 +341,15 @@ pub fn render_all(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     out.push(save(
         &desktop_with(&mut app, w, h, &[Surface::Quick]),
         dir.join("08-wifi-password.png"),
+    )?);
+
+    app.st.wifi.pending = None;
+    app.st.wifi.open = false;
+    app.st.quick_open = false;
+    app.st.confirm = Some(crate::system::PowerAction::ShutDown);
+    out.push(save(
+        &desktop_with(&mut app, w, h, &[Surface::Dialog]),
+        dir.join("10-power-confirm.png"),
     )?);
 
     Ok(out)

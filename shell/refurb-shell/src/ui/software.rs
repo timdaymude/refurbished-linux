@@ -24,7 +24,10 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
         44.0 + title_w + 12.0,
         0.0,
         42.0,
-        &format!("{} applications installed", st.apps.len()),
+        // This is the number of desktop entries on the machine, not the size of
+        // the catalogue: calling it "applications installed" made the window
+        // look like a 17-package store instead of a front end to Debian.
+        &format!("{} applications on this computer · Debian's catalogue", st.apps.len()),
         theme::T_SMALL,
         REGULAR,
         theme::ink_faint(),
@@ -102,11 +105,27 @@ fn result_list(cx: &mut Ctx, area: Rect) {
 
     if st.software.results.is_empty() {
         let (title, body) = if st.software.searched {
-            ("No software found", "Try a different word, for example “editor”.")
+            let query = st.software.query.trim();
+            if query.is_empty() {
+                (
+                    "No software found",
+                    "Search Debian by package name or by what it does.",
+                )
+            } else {
+                (
+                    "No package in Debian matches that",
+                    // Most "missing" applications are simply not packaged by
+                    // Debian (Jellyfin is one); the window must say so instead
+                    // of looking broken or offline.
+                    "Reawakening OS installs from Debian's repositories. Try a \
+                     different word, or a program Debian itself packages.",
+                )
+            }
         } else {
             (
                 "Search Debian's catalogue",
-                "Applications are installed only when you ask for them.",
+                "Package names and descriptions, straight from apt. Nothing is \
+                 installed until you ask for it.",
             )
         };
         widgets::empty_state(cx, area, title, body);

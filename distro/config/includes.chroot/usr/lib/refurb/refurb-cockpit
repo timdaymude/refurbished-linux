@@ -1,0 +1,134 @@
+#!/bin/sh
+# refurb-cockpit - Cockpit on this computer and, deliberately, on the network.
+#
+# Cockpit is installed and socket activated, and the image binds it to
+# 127.0.0.1 only: a live USB with no password on its desktop account must not
+# offer a web login to the whole network. Remote administration is therefore a
+# switch the user throws, and it needs the account's own password because
+# that is what Cockpit will ask for at the login page. Cockpit is never
+# exposed to the internet by this script - only the local network can reach it,
+# and port 9090 stays closed unless this is run.
+#
+#   refurb-cockpit            show the state and what to do
+#   refurb-cockpit on|off     allow or refuse access from the local network
+#   refurb-cockpit password   set this account's password (Cockpit login)
+#   refurb-cockpit open       open the local Cockpit page in the browser
+set -u
+
+PANEL=/usr/lib/refurb
+DROPIN=/etc/systemd/system/cockpit.socket.d/50-refurb-remote.conf
+LOOPBACK=127.0.0.1
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+say() { printf '%s\n' "$*"; }
+
+addresses() {
+    if have ip; then
+        ip -o -4 addr show scope global 2>/dev/null |
+            awk '{print $2 " " $4}' | cut -d/ -f1
+    fi
+}
+
+# "P" when a password is set, "NP" when the account has none, "L" when locked.
+password_state() {
+    if have passwd; then
+        passwd -S "$(id -un)" 2>/dev/null | awk '{print $2}'
+    fi
+}
+
+remote_enabled() {
+    [ -f "$DROPIN" ]
+}
+
+show_status() {
+    say "Cockpit (web administration)"
+    say ""
+    if systemctl is-active --quiet cockpit.socket 2>/dev/null; then
+        say "  socket:  active"
+    else
+        say "  socket:  not running - start it with: sudo systemctl start cockpit.socket"
+    fi
+    if have ss; then
+        listen=$(ss -ltn 2>/dev/null | awk '$4 ~ /:9090$/ {print $4}' | paste -sd' ' -)
+        [ -n "$listen" ] && say "  listening on: $listen"
+    fi
+    case "$(password_state)" in
+    P) say "  password: set" ;;
+    *) say "  password: NOT set - Cockpit cannot log in until it is (see below)" ;;
+    esac
+    say ""
+    if remote_enabled; then
+        say "  Remote access: ENABLED on this network. Authorised users can open"
+        addresses | while read -r _ addr; do
+            say "    http://$addr:9090"
+        done
+        say "  Only reachable from this network; do not forward port 9090 from a router."
+        say "  Turn it off with: refurb-cockpit off"
+    else
+        say "  Remote access: off (reachable only from this computer)."
+        say "  To administer this machine from another computer on the same network:"
+        say "    refurb-cockpit password   # once, if no password is set"
+        say "    refurb-cockpit on"
+    fi
+    say ""
+    say "  Local page: http://$LOOPBACK:9090"
+}
+
+case ${1:-status} in
+on | enable)
+    # The socket is a system unit, so this is an administrative action: sudo asks
+    # for the account's password in this terminal, exactly like any other.
+    if [ "$(id -u)" -ne 0 ]; then
+        exec sudo "$0" _on
+    fi
+    ;;
+_on)
+    target_user=${SUDO_USER:-$(id -un)}
+    install -d "$(dirname "$DROPIN")"
+    cat >"$DROPIN" <<'CONF'
+# Written by refurb-cockpit on: Cockpit answers on every interface so that an
+# authorised browser on the local network can reach it. Remove this file (or
+# run `refurb-cockpit off`) to go back to 127.0.0.1 only.
+[Socket]
+ListenStream=
+ListenStream=9090
+CONF
+    systemctl daemon-reload
+    systemctl restart cockpit.socket
+    say "Remote administration enabled. From another computer on this network:"
+    addresses | while read -r _ addr; do
+        say "  http://$addr:9090"
+    done
+    say "Log in as $target_user. Port 9090 must not be forwarded from a router."
+    show_status
+    ;;
+off | disable)
+    if [ "$(id -u)" -ne 0 ]; then
+        exec sudo "$0" _off
+    fi
+    rm -f "$DROPIN"
+    systemctl daemon-reload
+    systemctl restart cockpit.socket
+    say "Remote administration disabled: Cockpit listens on $LOOPBACK only."
+    ;;
+_off)
+    rm -f "$DROPIN"
+    systemctl daemon-reload
+    systemctl restart cockpit.socket
+    say "Remote administration disabled."
+    show_status
+    ;;
+password | passwd)
+    say "Cockpit logs in with this account's password. Type a new one when asked."
+    exec passwd
+    ;;
+open)
+    exec brave-browser --new-window "http://$LOOPBACK:9090"
+    ;;
+status) show_status ;;
+*)
+    say "usage: refurb-cockpit [status|on|off|password|open]" >&2
+    exit 2
+    ;;
+esac

@@ -5,6 +5,13 @@
 # supervisor so a crash produces a log and a restart, not a blank screen.
 /usr/lib/refurb/shell-supervisor /usr/bin/refurb-shell >/dev/null 2>&1 &
 
+# Take the power key away from logind's default "power off now" handling for as
+# long as the session lives. Without this the key never reaches the compositor:
+# logind acts on it first and the machine is gone before a dialog could appear.
+# The lock is released when the session ends, so a machine without a desktop
+# still powers off from the key.
+/usr/lib/refurb/session-inhibit >/dev/null 2>&1 &
+
 # Desktop notifications: the org.freedesktop.Notifications service that the
 # Wi-Fi, Bluetooth and sound programs report through. r7 started mako before the
 # compositor existed, from the session launcher, and it exited at once with

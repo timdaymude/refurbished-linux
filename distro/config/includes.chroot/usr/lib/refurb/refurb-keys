@@ -1,22 +1,105 @@
 #!/bin/sh
-# refurb-keys - show what the keyboard actually delivers.
+# refurb-keys - what the keyboard actually does, and why.
 #
-# The Chromebook top row can reach Linux as XF86 keysyms, as plain F-keys, or as
-# nothing at all depending on the firmware, the EC driver and the model. This
-# window shows the keycodes the kernel delivers, so a key that "does nothing"
-# can be told apart from a key that never arrives.
+# A Chromebook has no Fn key: its top row is back, forward, refresh,
+# full-screen, overview, brightness down/up, mute, volume down/up. Whether those
+# reach Linux as the proper keysyms or as plain F6-F10 depends on the model's
+# firmware and EC driver. This window answers the three questions that matter:
 #
-#   224 / 225   brightness down / up   -> XF86MonBrightnessDown/Up
-#   113         mute
-#   114 / 115   volume down / up       -> XF86AudioLowerVolume/RaiseVolume
-#   93 .. 97    the top row reported as F6 .. F10
+#   1. does the machine have the Chromebook key remap, and is it the one that
+#      applies to this keyboard (hwdb, by DMI vendor)?
+#   2. do the brightness and volume commands work right now - the same commands
+#      the top row and Super+F6..F10 run?
+#   3. what key codes does the kernel deliver for the keys that do nothing?
 #
-# Whatever the outcome, Super+F6/F7 (brightness) and Super+F8/F9/F10 (mute,
-# volume) run the same commands, so the machine stays controllable.
+# Nothing here changes a setting. `--capture` needs read access to /dev/input,
+# which the desktop account gets from the image's input group.
 set -u
 
-if [ -r /dev/input/event0 ]; then
-    exec foot -e sh -c 'printf "\n  Press each key that does not work, then close this window.\n\n  224/225 brightness  113 mute  114/115 volume  93-97 = F6-F10\n\n"; exec libinput debug-events --show-keycodes'
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+case ${1:-} in
+--capture | capture)
+    if [ ! -r /dev/input/event0 ]; then
+        printf '\n  This account cannot read /dev/input.\n\n'
+        printf '  Add it to the input group and log in again:\n'
+        printf '    sudo usermod -aG input "%s"\n\n' "$(id -un)"
+        printf '  Press Enter to close. '
+        read -r _
+        exit 1
+    fi
+    printf '\n  Press each key that does not work, then close this window.\n\n'
+    printf '  Chromebook top row (left to right):\n'
+    printf '    back  forward  refresh  fullscreen  overview\n'
+    printf '    brightness down  brightness up  mute  volume down  volume up\n\n'
+    printf '  Expected key codes: 224/225 brightness, 113 mute, 114/115 volume.\n'
+    printf '  93-97 mean the key arrived as F6-F10: the hwdb remap did not apply.\n\n'
+    exec libinput debug-events --show-keycodes
+    ;;
+esac
+
+# ---- 1. the remap ---------------------------------------------------------
+printf '\n  Reawakening OS keyboard check\n'
+printf '  ----------------------------\n\n'
+printf '  Keyboard(s) the kernel sees:\n'
+for dev in /sys/class/input/input*/name; do
+    [ -r "$dev" ] || continue
+    name=$(cat "$dev" 2>/dev/null) || continue
+    case "$name" in
+    *Video* | *Power* | *Sleep* | *Button*) continue ;;
+    esac
+    printf '    %s\n' "$name"
+    parent=${dev%/name}
+    modalias=$(cat "$parent/id/modalias" 2>/dev/null || true)
+    [ -n "$modalias" ] && printf '      modalias: %s\n' "$modalias"
+done
+
+if [ -f /etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb ]; then
+    printf '\n  Chromebook top-row remap: installed.\n'
+    printf '    F6..F10 become brightness down/up, mute, volume down/up when the\n'
+    printf '    internal keyboard is an atkbd device on Google hardware. Other\n'
+    printf '    keyboards are not touched.\n'
+else
+    printf '\n  Chromebook top-row remap: NOT installed.\n'
 fi
 
-exec foot -e sh -c 'printf "\n  This account cannot read /dev/input, so raw keycodes cannot be shown.\n\n  Still checkable: Super+F6/F7 change the brightness and Super+F8/F9/F10\n  mute and change the volume. If those work, the top row reaches the\n  compositor under a different key - run refurb-diag and send the keyboard\n  sections (51, 55, 57).\n\n  Press Enter to close.\n"; read -r _'
+# ---- 2. do the controls work? ---------------------------------------------
+printf '\n  Controls, using the same commands as the keys:\n'
+probe() {
+    label=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        printf '    %-22s ok\n' "$label"
+    else
+        printf '    %-22s FAILED (no change)\n' "$label"
+    fi
+}
+
+if command -v wpctl >/dev/null 2>&1; then
+    printf '    volume before: %s\n' "$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo 'no sink')"
+    probe 'volume down' /usr/lib/refurb/refurb-control volume down
+    probe 'volume up' /usr/lib/refurb/refurb-control volume up
+    probe 'mute toggle' /usr/lib/refurb/refurb-control mute
+    probe 'mute toggle back' /usr/lib/refurb/refurb-control mute
+    printf '    volume after:  %s\n' "$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo 'no sink')"
+else
+    printf '    wpctl is missing: PipeWire is not running (no audio controls).\n'
+fi
+
+if [ -d /sys/class/backlight ]; then
+    probe 'brightness down' /usr/lib/refurb/refurb-control brightness down
+    probe 'brightness up' /usr/lib/refurb/refurb-control brightness up
+else
+    printf '    brightness             no backlight device on this machine\n'
+fi
+
+# ---- 3. what to do next ----------------------------------------------------
+printf '\n  If a key above does nothing:\n'
+printf '    - Super+F6 / Super+F7 change the brightness.\n'
+printf '    - Super+F8 / Super+F9 / Super+F10 mute and change the volume.\n'
+printf '    - Run  refurb-keys --capture  and press the key: the code it shows\n'
+printf '      (and the report from  refurb-diag  sections 54, 55, 56) says\n'
+printf '      whether the key ever reaches Linux.\n'
+printf '\n  Press Enter to close. '
+read -r _

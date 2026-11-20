@@ -1,0 +1,19 @@
+# Reawakening OS - applications that are not part of the desktop itself.
+#
+# Jellyfin Desktop (the official Jellyfin Media Player) from Jellyfin's own
+# archive, because Debian does not package it. It is a Qt 6 + libmpv front end:
+# browsing the library uses QtWebEngine, playback goes through libmpv, so
+# hardware decoding is shared with the rest of the system instead of adding a
+# second multimedia stack. It is deliberately the *player*, not the server.
+jellyfin-media-player
+# The Qt 6 Wayland platform plugin. Without it the player falls back to X11
+# through XWayland: it still starts, but with a different scaling and input path
+# than every other window on this desktop.
+qt6-wayland
+
+# VA-API: hardware video decoding. The drivers are in the desktop list; these
+# are the client libraries and the diagnostic that says whether the GPU can
+# actually decode anything.
+libva2
+libva-drm2
+vainfo

@@ -13,6 +13,11 @@ use crate::{icons, render, theme};
 use super::widgets::{self, Ctx};
 use super::{Action, Section, SliderKind, Tool, WindowKind};
 
+/// Room around the card for its shadow.
+const SHADOW: f32 = 4.0;
+/// Gap between the card and the bar.
+const EDGE: f32 = 6.0;
+
 const PAD: f32 = 14.0;
 const GAP: f32 = 8.0;
 const HEADER_H: f32 = 26.0;
@@ -77,9 +82,26 @@ pub fn height(st: &super::State) -> u32 {
     (PAD * 2.0 + sum + GAP * (blocks.len() as f32 - 1.0)).ceil() as u32
 }
 
+/// Where the card sits on the output.
+///
+/// The panel's surface covers the whole screen, because a surface only ever
+/// receives the clicks that land on it and "click anywhere to close" needs the
+/// ones that do not. The card itself hangs off the bar, in the corner.
+fn card_rect(st: &super::State, w: f32, h: f32) -> Rect {
+    let footprint = height(st) as f32;
+    let card_h = (footprint - SHADOW * 2.0).max(1.0);
+    let x = (w - CARD_W - SHADOW).max(SHADOW);
+    let y = if super::bar_is_bottom() {
+        (h - theme::BAR_H - EDGE - card_h - SHADOW).max(SHADOW)
+    } else {
+        theme::BAR_H + EDGE + SHADOW
+    };
+    render::rect(x, y, CARD_W, card_h)
+}
+
 pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     let st = cx.st;
-    let card = render::rect(4.0, 4.0, (w - 8.0).min(CARD_W), h - 8.0);
+    let card = card_rect(st, w, h);
     widgets::panel(cx, card);
     cx.hit(card, Action::Nothing);
 

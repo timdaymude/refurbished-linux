@@ -26,6 +26,9 @@ KEYS = {
     "F1": 59, "F2": 60, "F3": 61, "F4": 62, "F5": 63, "F6": 64,
     "F7": 65, "F8": 66, "F9": 67, "F10": 68, "F11": 87, "F12": 88,
     "print": 99,
+    # KEY_POWER: what a laptop's power button sends. Used to test the
+    # confirmation dialog end to end (inhibitor -> compositor -> shell).
+    "power": 116,
     "volup": 115, "voldown": 114, "mute": 113,
     "brightup": 225, "brightdown": 224,
 }

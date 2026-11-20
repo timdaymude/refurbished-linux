@@ -75,3 +75,42 @@ OS. It is ordered by how much it could hurt.
 - **Fonts**: Inter and DejaVu are installed. CJK and emoji fonts are not, so some
   web pages will show boxes for those glyphs unless Brave downloads its own
   fallback.
+
+## Round 11 additions
+
+- **The power key itself is a hardware test.** QEMU delivers no `KEY_POWER` to
+  the guest (the ACPI power button is not wired to the emulated keyboard), so
+  what was verified is the two halves separately: `systemd-inhibit --list` shows
+  the session holding exactly one `handle-power-key` lock, and
+  `refurb-shell --send power` - the command labwc's `XF86PowerOff` binding runs -
+  raises the dialog. That the physical key reaches labwc once logind is inhibited
+  can only be seen on the Chromebook.
+- **Server-side decorations for Brave are not in this build.** The window rule
+  was removed while chasing a crash loop that turned out to be QEMU's `-cpu max`
+  (see `docs/round-11.md` section 14), and it was not re-tested afterwards.
+  Brave therefore keeps its own titlebar; maximize is `Alt+F10`, `Super+F`,
+  `Super+Up` or a double-click on its header, and `F11` is full-screen.
+- **The quick panel swallows the first click outside itself.** That is what a
+  popup does, and it is the price of the panel being able to see that click at
+  all. The panel also holds the keyboard while it is open, so typing goes to it
+  until it is dismissed.
+- **Jellyfin playback against a real server is untested.** What was verified is
+  that Jellyfin Media Player 1.13 starts, draws its server-address screen and
+  gets a taskbar entry. It is also the heaviest component in the image: about
+  426 MB resident plus three Qt WebEngine children, which pushed a 2 GB emulated
+  machine into swap with a browser open.
+- **Cockpit's login from another computer is untested**, because the live
+  account has no password: `refurb-cockpit status` says so, and `refurb-cockpit
+  password` is the fix. Verified instead: the socket is active, serves
+  `https://127.0.0.1:9090` locally, and the host-forwarded port is refused, which
+  is the loopback binding doing its job.
+- **The 160 % audio ceiling and the stuck cursor** were not reproduced. r11
+  installs the diagnostics that will show what happens on the machine
+  (`refurb-diag` collects the sink, the hardware mixer, `vainfo` and `/dev/dri`)
+  and names the cursor theme, but neither is a proven fix.
+- **The Chromebook top row is still a hardware test.** The hwdb entry matches
+  only Google's internal atkbd, and `refurb-keys` reports what a key press
+  produced, so the first session with the machine will say whether the mapping
+  fires.
+- **`iproute2` is not installed**, so `refurb-diag` cannot print `ss` output; use
+  `lsof`/`/proc/net/tcp` or install it, if that is ever needed.

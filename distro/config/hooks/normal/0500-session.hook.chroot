@@ -88,7 +88,8 @@ for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
                /usr/lib/refurb/session-launch /usr/lib/refurb/refurb-control \
                /usr/lib/refurb/osd-start /usr/lib/refurb/tty1-autologin \
-               /usr/lib/refurb/refurb-diag \
+               /usr/lib/refurb/refurb-diag /usr/lib/refurb/refurb-keys \
+               /usr/lib/refurb/refurb-cockpit /usr/lib/refurb/session-inhibit \
                /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
 done
@@ -100,6 +101,9 @@ ln -sf /usr/lib/refurb/refurb-control /usr/local/bin/refurb-control
 # terminal, without knowing where the script lives.
 ln -sf /usr/lib/refurb/refurb-diag /usr/local/bin/refurb-diag
 ln -sf /usr/lib/refurb/refurb-keys /usr/local/bin/refurb-keys
+# Remote administration: one command that says what Cockpit is doing and how to
+# reach it from another computer, instead of a browser page that never answers.
+ln -sf /usr/lib/refurb/refurb-cockpit /usr/local/bin/refurb-cockpit
 
 chmod 0440 /etc/sudoers.d/refurb-helpers
 

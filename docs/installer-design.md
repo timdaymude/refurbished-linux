@@ -93,3 +93,44 @@ install complexity). Both can come later as an explicit opt-in.
 4. Installed-system memory measurement: idle PSS, MemAvailable, zram, then
    Brave with YouTube when network is available.
 5. Physical hardware last.
+
+## Round 11 review: what changed, and why it is still a design
+
+Round 11 did **not** implement the installer. The rest of the round's work is on
+the live desktop; a disk-erasing program that has not been through its own
+virtual-machine test would be worse than no installer at all, so `refurb-install`
+stays an explicit r12 milestone. What this round did establish is the list of
+things the implementation must get right, checked against the image rather than
+assumed:
+
+- **The live account is `refurb`, uid 1000, with no password** (`passwd -d` in
+  `0500-session.hook.chroot`). The installer removes it and creates the user's
+  own account at uid 1000, exactly as this document already says.
+- **Nothing hardcodes `refurb`.** `tty1-autologin` and `session-start` both pick
+  the lowest uid ≥ 1000 whose shell can log in, so a re-created account is
+  picked up with no edits. This was checked, not inferred: both scripts were
+  read for this review.
+- **The source of the filesystem is the live medium.** `live-boot` mounts the
+  ISO at `/run/live/medium`; `live/filesystem.squashfs` there is the same
+  artifact the running system booted from, so the copy step is `unsquashfs` of
+  that file, never a copy of the running `/`.
+- **`live-boot` and `live-config` must be removed** in the chroot stage, together
+  with `/etc/live`, or the installed system boots looking for a live medium.
+- **The GUI runs as the session user; partitioning needs root.** The live image
+  already ships a polkit rule for the desktop account. The installer should be
+  launched through `pkexec` with its own action
+  (`org.reawakening.install`) rather than a blanket NOPASSWD sudoers entry, and
+  the program must still enforce its own "typed confirmation" rule because
+  polkit authorization is not a substitute for the user naming the disk.
+- **The installer must not ship in the installed system.** The chroot step
+  removes `/usr/lib/refurb/refurb-install` and its two launcher entries; the
+  live image is the only place they exist.
+- **Cockpit's remote login depends on a password.** The live account has none,
+  which is why Cockpit could not be reached from another computer even once the
+  socket was listening (see `refurb-cockpit`). An installed system has a real
+  password, so this problem is specific to the live medium.
+
+The sequence, layout and safety rules above are unchanged. The test plan is
+still the gate: blank 8 GB disk under UEFI, then under BIOS, then a disk with a
+fake Windows ESP and NTFS partition where declining must leave `sfdisk -d`
+identical, and only then hardware.

@@ -46,6 +46,12 @@
     <!-- The shell draws its own headers for these two windows. -->
     <windowRule identifier="refurb-software" serverDecoration="no" />
     <windowRule identifier="refurb-settings" serverDecoration="no" />
+    <!-- Do NOT ask for server decorations for Brave. r11 tried it (the rule is
+         one line) and labwc 0.8.3 was killed by the negotiation every time a
+         Brave window mapped, which took the whole session down with it and left
+         a restart loop. Brave therefore keeps its own titlebar; maximize is
+         available from Alt+F10, Super+F, Super+Up and a double-click on Brave's
+         own header, and F11 is full-screen. See docs/round-11.md. -->
   </windowRules>
 
   <keyboard>
@@ -83,6 +89,12 @@
     <keybind key="W-Down">
       <action name="UnMaximize" />
     </keybind>
+    <!-- Alt+F10 is "maximize" on most Linux desktops, and F11 or Super+F11 is
+         true full-screen (a video, for instance), which is a different thing:
+         a maximized window keeps the taskbar, full-screen covers it. -->
+    <keybind key="A-F10">
+      <action name="ToggleMaximize" />
+    </keybind>
     <keybind key="F11">
       <action name="ToggleFullscreen" />
     </keybind>
@@ -99,6 +111,15 @@
          Nothing is uploaded; the archive is written under $HOME. -->
     <keybind key="W-d">
       <action name="Execute"><command>foot -e sh -c 'refurb-diag; printf "\nPress Enter to close "; read -r _'</command></action>
+    </keybind>
+    <!-- The power key. The session holds a low-level handle-power-key inhibitor
+         (see /usr/lib/refurb/session-inhibit) so logind leaves the key alone and
+         it arrives here instead of switching the machine off at once; the shell
+         then shows the confirmation. Holding the key for several seconds still
+         switches the machine off through the embedded controller, which is the
+         emergency path and needs no software. -->
+    <keybind key="XF86PowerOff">
+      <action name="Execute"><command>refurb-shell --send power</command></action>
     </keybind>
     <keybind key="Print">
       <action name="Execute"><command>sh -c 'mkdir -p "$HOME/Pictures" &amp;&amp; grim "$HOME/Pictures/screenshot-$(date +%F-%H%M%S).png"'</command></action>

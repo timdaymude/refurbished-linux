@@ -1,0 +1,62 @@
+Reawakening OS 0.3.0-r11 — shutdown asks first, a quick panel that closes, Jellyfin, Cockpit
+
+file:   reawakening-os-0.3.0-r11-amd64.iso
+size:   1107296256 bytes
+sha256: 7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59
+
+The two headline defects from r10 are gone:
+
+- Shutting down or restarting asks first. The power key, the quick panel's
+  Shut down and Restart buttons and the settings panel all raise the same modal
+  card ("Shut down Reawakening OS?"), Cancel is focused, Escape cancels, a click
+  outside the card does nothing, and nothing happens to the machine until the
+  destructive button is chosen. The session takes a low-level handle-power-key
+  inhibitor so logind leaves the key alone and it reaches the compositor; the
+  inhibitor is released when the compositor exits, so the power key still
+  switches a machine with no desktop off, and holding it still cuts the power at
+  the hardware level.
+
+- The quick panel closes when it should: a click anywhere outside the card, on
+  the desktop or on an application window, dismisses it; Escape dismisses it; the
+  gear toggles it; the X button is still there; and a slider being dragged is
+  never interrupted. It does this by covering the output with a transparent
+  layer surface and drawing the card in the corner, which is also why it can hold
+  the keyboard while it is open.
+
+Also in this image:
+
+- Brave keeps its own titlebar (the compositor's server-decoration rule for it
+  was tried and is not in this build), with Alt+F10 added alongside Super+F and
+  Super+Up for maximize and F11 for true full-screen.
+- The pointer theme is named explicitly (Adwaita, shipped in
+  adwaita-icon-theme) so the cursor cannot be left as a text bar or a resize
+  arrow after an interaction.
+- Chromebook top-row keys: a hwdb entry maps the atkbd scan codes 0x40-0x44 to
+  brightness down/up, mute and volume down/up on Google machines, and
+  refurb-keys handles the F-key fallback. Both paths go through refurb-control,
+  so the keys, the bar and the sliders agree.
+- Zombie processes are reaped by a thread in the shell; a full session of
+  launching and closing applications leaves 0 `Z` entries.
+- Jellyfin Media Player 1.13 (Qt6 + libmpv, from Jellyfin's own trixie archive)
+  is installed and in the launcher, with Qt6 Wayland, libva and vainfo.
+- Cockpit: `refurb-cockpit status|on|off|password` and a remote-access entry in
+  the launcher. Off by default and bound to loopback; the toggle needs the
+  account password, and the script says so.
+- Software is labelled "N applications on this computer · Debian's catalogue"
+  with an honest empty state, and searches fall back to descriptions.
+
+Verified in QEMU from this ISO (system emulation, no KVM, no GPU): boots to the
+desktop with the bottom bar and wallpaper; serial login as refurb; exactly one
+power-key inhibitor held; the power dialog appears from the shell's power
+message, Escape cancels it, a click outside it does nothing; the quick panel
+opens from the gear, Escape closes it, a click on the Brave window closes it;
+Alt+F10 maximizes and keeps the bar; closing Brave from its own close button
+removes its taskbar entry; Jellyfin Media Player opens to its server screen;
+Cockpit answers on https://127.0.0.1:9090 (200) and the forwarded port from the
+host is refused (000), which is the loopback binding doing its job; 0 zombies;
+24/24 cargo tests pass; scripts/check-config.sh passes.
+
+Not verified: the Chromebook itself (top row, backlight, speakers and the 160 %
+ceiling, video smoothness, the stuck cursor, the hardware power key), a real
+radio, Cockpit's login from another computer (the live account has no password),
+and the installer, which is deliberately not in this round.

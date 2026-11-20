@@ -104,12 +104,25 @@ deb $MIRROR ${SUITE}-updates main contrib non-free non-free-firmware
 deb http://security.debian.org/debian-security ${SUITE}-security main contrib non-free non-free-firmware
 EOF
 
-    # Brave from its own archive, with the key this repository already ships.
-    cp "$DISTRO/config/archives/brave.key.chroot" \
-       "$ROOTFS/usr/share/keyrings/brave-browser-archive-keyring.gpg"
-    cp "$DISTRO/config/archives/brave.list.chroot" \
-       "$ROOTFS/etc/apt/sources.list.d/brave.list"
-    install -d "$ROOTFS/etc/apt/sources.list.d"
+    # Third-party archives: every <name>.list.chroot is a source and the
+    # matching <name>.key.chroot is the key it is signed with. Brave keeps its
+    # upstream keyring file name because its list names that exact path.
+    install -d "$ROOTFS/etc/apt/sources.list.d" "$ROOTFS/usr/share/keyrings" \
+               "$ROOTFS/etc/apt/trusted.gpg.d"
+    for list in "$DISTRO"/config/archives/*.list.chroot; do
+        [ -e "$list" ] || continue
+        name=$(basename "$list" .list.chroot)
+        key="$DISTRO/config/archives/$name.key.chroot"
+        dest="/usr/share/keyrings/$name.gpg"
+        [ "$name" = brave ] && dest=/usr/share/keyrings/brave-browser-archive-keyring.gpg
+        cp "$list" "$ROOTFS/etc/apt/sources.list.d/$name.list"
+        if [ -f "$key" ]; then
+            install -m 644 "$key" "$ROOTFS$dest"
+            # A copy in trusted.gpg.d as well: it costs a couple of kilobytes
+            # and covers an apt that does not honour signed-by for this file.
+            install -m 644 "$key" "$ROOTFS/etc/apt/trusted.gpg.d/$name.gpg"
+        fi
+    done
 
     # Nothing may start services while the image is being built.
     printf '#!/bin/sh\nexit 101\n' > "$ROOTFS/usr/sbin/policy-rc.d"

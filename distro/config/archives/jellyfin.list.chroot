@@ -1,0 +1,4 @@
+# Jellyfin's own archive: the desktop player is not in Debian.
+#   jellyfin-media-player  Qt 6 + libmpv front end to a Jellyfin server
+# The key is in /usr/share/keyrings/jellyfin.gpg (see jellyfin.key.chroot).
+deb [signed-by=/usr/share/keyrings/jellyfin.gpg] https://repo.jellyfin.org/debian trixie main

@@ -34,12 +34,15 @@ fn run(prog: &str, args: &[&str]) -> Option<String> {
 }
 
 pub fn spawn(prog: &str, args: &[&str]) {
-    let _ = Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
+    // Handed to the reaper instead of being dropped: a dropped `Child` stays in
+    // the process table as a zombie for as long as the shell runs.
+    let _ = crate::reaper::spawn_detached(
+        prog,
+        args,
+        Stdio::null(),
+        Stdio::null(),
+        Stdio::null(),
+    );
 }
 
 fn have(prog: &str) -> bool {

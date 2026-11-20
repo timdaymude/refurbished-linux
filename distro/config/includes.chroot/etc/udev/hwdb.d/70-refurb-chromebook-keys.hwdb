@@ -1,0 +1,31 @@
+# Chromebook top-row keys (Reawakening OS)
+#
+# A Chromebook's keyboard has no Fn key: the top row *is* back, forward,
+# refresh, full-screen, overview, brightness down/up, mute, volume down/up.
+# Depending on the model and firmware, those keys reach Linux either as the
+# XF86 media keysyms (in which case labwc's own binds already handle them) or
+# as plain F6-F10, which is what makes Brave open its caret-browsing prompt on
+# F7 instead of turning the screen down.
+#
+# This hwdb entry rewrites the kernel's key codes for the internal keyboard of
+# Google hardware. The atkbd driver numbers the top row F6..F10 as scancodes
+# 0x40..0x44; those five become the brightness and audio keys, so the keysyms
+# the compositor receives are the same ones a normal laptop sends and no Fn key
+# is needed. External keyboards and every other machine are untouched: the rule
+# only matches an atkbd device whose DMI vendor is Google.
+#
+# If a particular model already delivers XF86 keysyms this rule never fires
+# (its keyboard is not an atkbd device), so it cannot double-apply.
+evdev:atkbd:dmi:*:svnGOOGLE*:pn*
+ KEYBOARD_KEY_40=brightnessdown
+ KEYBOARD_KEY_41=brightnessup
+ KEYBOARD_KEY_42=mute
+ KEYBOARD_KEY_43=volumedown
+ KEYBOARD_KEY_44=volumeup
+
+evdev:atkbd:dmi:*:svnGoogle*:pn*
+ KEYBOARD_KEY_40=brightnessdown
+ KEYBOARD_KEY_41=brightnessup
+ KEYBOARD_KEY_42=mute
+ KEYBOARD_KEY_43=volumedown
+ KEYBOARD_KEY_44=volumeup

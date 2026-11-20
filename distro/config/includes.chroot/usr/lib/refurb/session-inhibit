@@ -1,0 +1,49 @@
+#!/bin/sh
+# Hold the power key for the desktop.
+#
+# By default systemd-logind acts on a short power-key press itself: it powers
+# the machine off before any program sees the key. Setting HandlePowerKey=ignore
+# does not hand the key to the compositor either; the mechanism a desktop is
+# meant to use is a *low-level* inhibitor lock, which makes logind skip its own
+# handling and lets the key reach the Wayland session.
+#
+# The lock is held for as long as the compositor runs, and released when it
+# exits, so a machine with no desktop still switches off from the power key.
+#
+# It must not outlive the compositor: autostart children are not killed when
+# labwc dies, and the first r11 build held nine identical inhibitors after a
+# crash loop. Nor can it watch its parent process: labwc runs the autostart file,
+# which exits as soon as it has backgrounded its children, so "wait for the
+# parent" released the lock two seconds after taking it. The compositor's own
+# Wayland socket is the one thing that exists exactly as long as labwc does.
+set -u
+
+if ! command -v systemd-inhibit >/dev/null 2>&1; then
+    exit 0
+fi
+
+# No logind session (a bare compositor started from a recovery shell): there is
+# nothing to inhibit and no key routing to fix.
+[ -n "${XDG_SESSION_ID:-}" ] || exit 0
+
+socket="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${WAYLAND_DISPLAY:-wayland-0}"
+
+# --mode=block: logind must not act on the key. `sleep infinity` only keeps the
+# file descriptor - and therefore the lock - open.
+systemd-inhibit \
+    --what=handle-power-key \
+    --who="Reawakening OS" \
+    --why="the power key asks before shutting the computer down" \
+    --mode=block \
+    sleep infinity &
+lock=$!
+
+trap 'kill "$lock" 2>/dev/null' INT TERM HUP
+
+while [ -S "$socket" ] || pgrep -x labwc >/dev/null 2>&1; do
+    sleep 2
+done
+
+kill "$lock" 2>/dev/null
+wait "$lock" 2>/dev/null
+exit 0

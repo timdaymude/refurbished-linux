@@ -1,0 +1,23 @@
+#!/bin/sh
+# Reawakening OS: input-related housekeeping that only the image build can do.
+set -e
+
+# Compile the hwdb entry that maps a Chromebook's top row to the brightness and
+# audio keys. A build chroot has no udev state, so the binary may be impossible
+# to write here; systemd-hwdb-update.service compiles it on the first boot of the
+# image. This step is the cheap path, never a reason to fail a build.
+if command -v systemd-hwdb >/dev/null 2>&1; then
+    install -d /etc/udev
+    systemd-hwdb update || echo "0700-input: hwdb.bin left to the first boot"
+    [ -f /etc/udev/hwdb.bin ] || echo "0700-input: no hwdb.bin in the image (built on first boot)"
+fi
+
+# The desktop account is allowed to read /dev/input so `refurb-keys` can show
+# the key codes its keyboard actually delivers. Without the group membership the
+# window can only say "this account cannot read /dev/input", which is exactly
+# the question it is meant to answer.
+for uid in $(awk -F: '$3 >= 1000 && $3 < 60000 {print $1}' /etc/passwd); do
+    if getent group input >/dev/null 2>&1; then
+        usermod -aG input "$uid" >/dev/null 2>&1 || true
+    fi
+done

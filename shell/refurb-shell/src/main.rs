@@ -9,6 +9,7 @@ mod icons;
 mod keys;
 mod pkg;
 mod preview;
+mod reaper;
 mod render;
 mod system;
 mod text;

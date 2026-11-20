@@ -163,6 +163,18 @@ run_shell 54-keymap.sh 'localectl status 2>/dev/null; echo; ls -l /etc/default/k
 # Key events as the kernel delivers them. Three seconds, then stop: the tester is
 # asked to press the media and brightness keys during the collection.
 run_shell 55-key-events.sh 'ls -l /dev/input/ 2>&1 | head -20; echo; if [ -r /dev/input/event0 ]; then timeout 3 libinput debug-events --show-keycodes 2>&1 | head -60; else echo "no read access to /dev/input (the account is not in the input group)"; fi'
+# The keyboard remap and the evdev codes behind the top row: an F7 that opens
+# Brave's caret browsing shows up here as key code 93.
+run_shell 56-keyboard-hwdb.sh 'for d in /sys/class/input/input*/name; do n=$(cat "$d" 2>/dev/null) || continue; echo "== $n"; cat "${d%/name}/id/modalias" 2>/dev/null; done; echo; systemd-hwdb query "evdev:atkbd:dmi:bvn*:bvr*:bd*:svnGOOGLE*:pn*" 2>&1 | head -20; echo; ls -l /etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb 2>&1'
+# Hardware video decoding: whether VA-API exists at all, and what it can decode.
+run_shell 45-vaapi.sh 'ls -l /dev/dri 2>&1; echo; vainfo 2>&1 | head -40'
+# Audio path: the selected sink, its volume and the mixer controls behind it.
+# 160% is PipeWire's software gain; if the ALSA control it feeds is low, the
+# speakers stay quiet however high the slider goes.
+run_shell 38-audio-levels.sh 'wpctl status 2>&1 | head -40; echo; wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1; echo; wpctl inspect @DEFAULT_AUDIO_SINK@ 2>&1 | head -30; echo; amixer -c0 contents 2>&1 | head -80'
+# Zombie processes: children the shell never waited for used to sit here.
+run_shell 19-resources.sh 'ps -eo stat,pid,ppid,comm --sort=stat | head -40; echo; echo "-- zombies"; ps -eo stat,pid,ppid,comm,args | awk "\$1 ~ /^Z/"'
+
 run_shell 56-keybinds.sh 'grep -n "XF86\|keybind" /etc/xdg/labwc/rc.xml 2>/dev/null | head -40'
 # What the compositor itself was given: an XKB variable that changes the layout
 # or a missing keymap root explains keys that never reach a binding.

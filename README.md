@@ -4,7 +4,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r10) — dark by default, with a bootable ISO that ships
+Version **0.3.0** (release r11) — dark by default, with a bootable ISO that ships
 the Reawakening wallpapers.
 
 Formerly named *Refurbished Linux*: the images up to r9 were published under that
@@ -41,6 +41,24 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
+- `reawakening-os-0.3.0-r11-amd64.iso` builds end to end and is
+  **1,107,296,256 bytes** with SHA256
+  (`7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59`). r11 is
+  the image that asks before it shuts down: the power key, the quick panel's
+  buttons and the settings panel all raise the same modal dialog, Cancel is the
+  default, Escape cancels and a click outside does nothing. The quick panel now
+  closes on a click anywhere outside it (including on an application window) and
+  on Escape, because it covers the output instead of being a small surface. This
+  image also reaps zombie processes, ships Jellyfin Media Player, adds Cockpit
+  with a loopback-only remote switch, names the cursor theme, maps the Chromebook
+  top row through hwdb and `refurb-keys`, and honours Alt+F10. Verified in QEMU
+  from the shipped ISO: the dialog appears and cancels, the panel closes both
+  ways, Alt+F10 maximizes and keeps the bar, closing Brave removes its taskbar
+  entry, Jellyfin starts to its server screen, Cockpit answers on
+  `https://127.0.0.1:9090` and is refused through the forwarded port, 0 zombies,
+  `cargo test --release` 24/24, `scripts/check-config.sh` clean. See
+  `docs/round-11.md` and `docs/performance-r11.md`. The installer is deliberately
+  not in this release; `docs/round-11.md` section 13 explains why.
 - `refurbished-linux-0.3.0-r9-amd64.iso` builds end to end and is
   **929,038,336 bytes** with a published SHA256
   (`4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e`). It

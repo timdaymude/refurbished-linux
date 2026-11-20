@@ -205,6 +205,11 @@ pub struct Session {
     controls_touched: Option<Instant>,
     /// Whether the quick panel currently holds the keyboard focus.
     quick_keys: bool,
+    /// The card height the click map was last built for (the surface itself is
+    /// full-screen; see `sync_panels`).
+    quick_card_height: u32,
+    /// Whether the power confirmation currently holds the keyboard focus.
+    dialog_keys: bool,
     /// Hardware writes are coalesced on these worker threads: a drag produces
     /// hundreds of positions but only the newest one is worth applying.
     volume_tx: Sender<f32>,
@@ -270,9 +275,7 @@ pub fn run() -> Result<(), String> {
     // REFURB_BAR_POSITION=bottom and nothing set it, so every image shipped with
     // the bar at the top. Bottom is the default now; the variable is only an
     // escape hatch for anyone who wants the other edge.
-    let bar_bottom = std::env::var("REFURB_BAR_POSITION")
-        .map(|value| !value.trim().eq_ignore_ascii_case("top"))
-        .unwrap_or(true);
+    let bar_bottom = ui::bar_is_bottom();
     // A seat is normally advertised by the registry; bind it through the global
     // list when it has not arrived yet. Done before the globals are moved into
     // the session, which keeps the registry snapshot for later reconciliation.
@@ -308,6 +311,8 @@ pub fn run() -> Result<(), String> {
         last_paint: now - Duration::from_millis(20),
         controls_touched: None,
         quick_keys: false,
+        quick_card_height: 0,
+        dialog_keys: false,
         volume_tx,
         brightness_tx,
         ipc: start_ipc(),
@@ -446,41 +451,60 @@ impl Session {
                     zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
                 );
             }
-            Surface::Quick => {
-                width = ui::quick::CARD_W as u32 + 8;
-                height = ui::quick::height(&self.app.st);
-                // The quick panel hangs off the bar, so it follows whichever
-                // edge the bar sits on.
-                if self.bar_bottom {
-                    surface.set_anchor(
-                        zwlr_layer_surface_v1::Anchor::Bottom
-                            | zwlr_layer_surface_v1::Anchor::Right,
-                    );
-                    surface.set_margin(0, 6, BAR_HEIGHT as i32 + 6, 0);
-                } else {
-                    surface.set_anchor(
-                        zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Right,
-                    );
-                    surface.set_margin(BAR_HEIGHT as i32 + 6, 6, 0, 0);
-                }
-                surface.set_size(width, height);
+            Surface::Dialog => {
+                // Full output, anchored to every edge, with a transparent
+                // backdrop: the card sits in the middle and a click outside it
+                // is swallowed here instead of reaching the window behind.
+                width = 0;
+                height = 0;
+                surface.set_anchor(
+                    zwlr_layer_surface_v1::Anchor::Top
+                        | zwlr_layer_surface_v1::Anchor::Bottom
+                        | zwlr_layer_surface_v1::Anchor::Left
+                        | zwlr_layer_surface_v1::Anchor::Right,
+                );
+                surface.set_size(0, 0);
                 surface.set_exclusive_zone(0);
-                // The panel only takes the keyboard while it is asking for a
-                // password. With `None` the compositor never gives it focus,
-                // which is why the Wi-Fi password field could not be typed
-                // into at all: the keys went to whatever window had focus.
-                exclusive_keys = self.editing_secret();
-                surface.set_keyboard_interactivity(if exclusive_keys {
-                    zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive
-                } else {
-                    zwlr_layer_surface_v1::KeyboardInteractivity::None
-                });
+                surface.set_keyboard_interactivity(
+                    zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                );
+                exclusive_keys = true;
+            }
+            Surface::Quick => {
+                // The whole output, with the card drawn in the corner. A small
+                // surface never receives a click that lands outside it, so
+                // "click anywhere to close" was impossible: the press went to
+                // whatever window was underneath and this program never heard
+                // about it. Under a full-screen transparent surface those
+                // clicks arrive here, and a press that hits no control closes
+                // the panel (see on_pointer_button).
+                width = 0;
+                height = 0;
+                surface.set_anchor(
+                    zwlr_layer_surface_v1::Anchor::Top
+                        | zwlr_layer_surface_v1::Anchor::Bottom
+                        | zwlr_layer_surface_v1::Anchor::Left
+                        | zwlr_layer_surface_v1::Anchor::Right,
+                );
+                surface.set_size(0, 0);
+                surface.set_exclusive_zone(0);
+                // It holds the keyboard while it is open, so Escape closes it.
+                // r10 left this at `None`, which is also why the Wi-Fi password
+                // field could not be typed into at all: the keys went to the
+                // window behind.
+                exclusive_keys = true;
+                surface.set_keyboard_interactivity(
+                    zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                );
             }
             _ => return,
         }
         wl.commit();
         if matches!(id, Surface::Quick) {
             self.quick_keys = exclusive_keys;
+        }
+        if matches!(id, Surface::Dialog) {
+            self.dialog_keys = exclusive_keys;
         }
         self.note(format!("open {id:?} size {width}x{height}"));
         self.surfaces.push(SurfaceEntry {
@@ -557,41 +581,34 @@ impl Session {
         }
 
         if self.app.st.quick_open {
-            let height = ui::quick::height(&self.app.st);
-            let width = ui::quick::CARD_W as u32 + 8;
             match self.entry_index(Surface::Quick) {
                 Some(idx) => {
-                    if self.surfaces[idx].height != height {
-                        if let Role::Layer(surface) = &self.surfaces[idx].role {
-                            surface.set_size(width, height);
-                            self.surfaces[idx].wl.commit();
+                    // The surface covers the whole output now, so expanding a
+                    // section only moves the card's top edge and the compositor
+                    // never reconfigures anything. The click map has to follow
+                    // it by hand, or a click in the part that only exists after
+                    // the expansion is matched against the old map and silently
+                    // does nothing - the "quick settings ignores clicks" report.
+                    let card_height = ui::quick::height(&self.app.st);
+                    if self.quick_card_height != card_height {
+                        self.quick_card_height = card_height;
+                        let (w, h) = (self.surfaces[idx].width, self.surfaces[idx].height);
+                        if w > 0 && h > 0 {
+                            self.refresh_hits(Surface::Quick, w, h);
+                            self.redraw(Surface::Quick);
                         }
-                        self.surfaces[idx].height = height;
-                        self.surfaces[idx].configured = false;
-                        // The compositor will not accept a buffer of the new
-                        // size until it has configured the surface, but the
-                        // click map can be rebuilt right now. Without this, a
-                        // click in the part of the panel that only exists after
-                        // the expansion was matched against the old map and
-                        // silently did nothing - the "quick settings ignores
-                        // clicks" report.
-                        self.refresh_hits(Surface::Quick, width, height);
                     }
-                    // Take the keyboard when a secret is being typed and give
-                    // it straight back when the dialog closes, so typing in an
-                    // application is never swallowed by an idle panel.
-                    let want_keys = self.editing_secret();
-                    if self.quick_keys != want_keys {
+                    // The panel holds the keyboard while it is open, so Escape
+                    // reaches it even when the pointer is over an application.
+                    if !self.quick_keys {
                         if let Role::Layer(surface) = &self.surfaces[idx].role {
-                            surface.set_keyboard_interactivity(if want_keys {
-                                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive
-                            } else {
-                                zwlr_layer_surface_v1::KeyboardInteractivity::None
-                            });
+                            surface.set_keyboard_interactivity(
+                                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                            );
                             self.surfaces[idx].wl.commit();
                         }
-                        self.quick_keys = want_keys;
-                        self.note(format!("quick panel keyboard focus: {want_keys}"));
+                        self.quick_keys = true;
+                        self.note("quick panel keyboard focus: true".to_string());
                     }
                     self.redraw(Surface::Quick);
                 }
@@ -599,7 +616,31 @@ impl Session {
             }
         } else {
             self.quick_keys = false;
+            self.quick_card_height = 0;
             self.close_surface(Surface::Quick);
+        }
+
+        if self.app.st.confirm.is_some() {
+            match self.entry_index(Surface::Dialog) {
+                Some(idx) => {
+                    // The dialog keeps the keyboard while it is open, so Escape
+                    // reaches it even when the pointer is over an application.
+                    if !self.dialog_keys {
+                        if let Role::Layer(surface) = &self.surfaces[idx].role {
+                            surface.set_keyboard_interactivity(
+                                zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive,
+                            );
+                            self.surfaces[idx].wl.commit();
+                        }
+                        self.dialog_keys = true;
+                    }
+                    self.redraw(Surface::Dialog);
+                }
+                None => self.open_layer(Surface::Dialog),
+            }
+        } else {
+            self.dialog_keys = false;
+            self.close_surface(Surface::Dialog);
         }
 
         for kind in [WindowKind::Software, WindowKind::Settings] {
@@ -1237,7 +1278,29 @@ impl Session {
                 }
             }
             Action::Power(action) => {
+                // Nothing happens to the power state until the dialog has been
+                // answered. This is what stops the power key and the quick
+                // panel's own buttons from shutting the machine down at once.
+                self.app.st.confirm = Some(action);
+                self.app.st.confirm_danger = false;
                 self.app.st.quick_open = false;
+                self.app.st.launcher_open = false;
+                self.app.st.wifi.open = false;
+                self.app.st.bt.open = false;
+                self.app.st.wifi.pending = None;
+                self.app.st.focus = Focus::None;
+            }
+            Action::DialogCancel => {
+                self.app.st.confirm = None;
+                self.app.st.confirm_danger = false;
+            }
+            Action::DialogFocus(danger) => self.app.st.confirm_danger = danger,
+            Action::DialogConfirm => {
+                let Some(action) = self.app.st.confirm else {
+                    return;
+                };
+                self.app.st.confirm = None;
+                self.app.st.confirm_danger = false;
                 system::power(action);
             }
             Action::Lock => {
@@ -1515,6 +1578,27 @@ impl Session {
     // -- input -----------------------------------------------------------
 
     fn on_key(&mut self, key: Key) {
+        // The confirmation is modal: while it is open, Escape cancels and the
+        // arrow keys or Tab move between the two buttons. Focus starts on
+        // Cancel, so Enter without a deliberate move never powers off.
+        if self.app.st.confirm.is_some() {
+            match key {
+                Key::Escape => self.dispatch(Action::DialogCancel),
+                Key::Tab | Key::Left | Key::Right | Key::Up | Key::Down => {
+                    let next = !self.app.st.confirm_danger;
+                    self.dispatch(Action::DialogFocus(next));
+                }
+                Key::Enter => {
+                    if self.app.st.confirm_danger {
+                        self.dispatch(Action::DialogConfirm);
+                    } else {
+                        self.dispatch(Action::DialogCancel);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.app.st.quick_open && self.app.st.wifi.pending.is_some() {
             match key {
                 Key::Char(c) => self.dispatch(Action::WifiPasswordChar(c)),
@@ -1602,9 +1686,25 @@ impl Session {
             .find(|(rect, _)| crate::render::contains(*rect, x, y))
             .map(|(rect, action)| (*rect, action.clone()));
         let Some((rect, action)) = found else {
+            // A press on the empty part of a shell surface is "outside" as far
+            // as the quick panel is concerned.
+            if self.app.st.quick_open {
+                self.dispatch(Action::QuickClose);
+            }
             self.note(format!("press at {x},{y} hit nothing on {surface:?}"));
             return;
         };
+        // Clicking the desktop, the bar or a window dismisses the quick panel.
+        // The three controls that open it are exempt, because those toggle it.
+        if self.app.st.quick_open
+            && !matches!(surface, Surface::Quick)
+            && !matches!(
+                action,
+                Action::QuickToggle | Action::WifiList | Action::BtList
+            )
+        {
+            self.dispatch(Action::QuickClose);
+        }
         self.note(format!("press at {x},{y} on {surface:?} -> {action:?} rect {rect:?}"));
         // Sliders carry their own track rect, so the value is taken from the
         // click position and the drag continues from there.
@@ -1690,6 +1790,11 @@ impl Session {
             return;
         }
         let command = String::from_utf8_lossy(&buffer[..n]).trim().to_string();
+        // The confirmation is modal for the compositor's shortcuts too: while it
+        // is open, Super+Space and friends must not open a panel on top of it.
+        if self.app.st.confirm.is_some() && !matches!(command.as_str(), "power" | "quit") {
+            return;
+        }
         match command.as_str() {
             "launcher" => {
                 if self.app.st.launcher_open {
@@ -1702,6 +1807,9 @@ impl Session {
             "settings" => self.dispatch(Action::WindowOpen(WindowKind::Settings)),
             "software" => self.dispatch(Action::WindowOpen(WindowKind::Software)),
             "lock" => self.dispatch(Action::Lock),
+            // The machine's own power key (labwc keybind): the dialog answers
+            // this, not logind, so a short press can never lose open work.
+            "power" => self.dispatch(Action::Power(system::PowerAction::ShutDown)),
             "quit" => self.dispatch(Action::Quit),
             other => eprintln!("refurb-shell: unknown command {other:?}"),
         }
@@ -2240,6 +2348,10 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Session {
             wl_pointer::Event::Leave { .. } => {
                 session.pointer_focus = None;
                 session.app.st.hover = None;
+                // A drag that ends with the pointer outside the surface used to
+                // leave the shell thinking it was still dragging, and the next
+                // poll then fought the slider.
+                session.drag = None;
                 session.redraw_visible();
             }
             wl_pointer::Event::Motion {
@@ -2305,24 +2417,34 @@ impl Dispatch<zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1, ()> 
         _: &QueueHandle<Self>,
     ) {
         let id = proxy.id().protocol_id();
-        let Some(entry) = session
-            .toplevels
-            .iter_mut()
-            .find(|entry| entry.handle.id().protocol_id() == id)
-        else {
-            return;
-        };
-        match event {
-            zwlr_foreign_toplevel_handle_v1::Event::Title { title } => entry.title = title,
-            zwlr_foreign_toplevel_handle_v1::Event::AppId { app_id } => entry.app_id = app_id,
-            zwlr_foreign_toplevel_handle_v1::Event::State { state } => {
-                entry.active = state.contains(&2u8);
+        let mut sync = false;
+        {
+            let Some(entry) = session
+                .toplevels
+                .iter_mut()
+                .find(|entry| entry.handle.id().protocol_id() == id)
+            else {
+                return;
+            };
+            match event {
+                zwlr_foreign_toplevel_handle_v1::Event::Title { title } => entry.title = title,
+                zwlr_foreign_toplevel_handle_v1::Event::AppId { app_id } => entry.app_id = app_id,
+                zwlr_foreign_toplevel_handle_v1::Event::State { state } => {
+                    entry.active = state.contains(&2u8);
+                }
+                zwlr_foreign_toplevel_handle_v1::Event::Closed => {
+                    entry.closed = true;
+                    // A closed window is removed from the taskbar immediately.
+                    // Waiting for a later `Done` left the entry of a destroyed
+                    // window in the bar until something else happened.
+                    sync = true;
+                }
+                zwlr_foreign_toplevel_handle_v1::Event::Done => sync = true,
+                _ => {}
             }
-            zwlr_foreign_toplevel_handle_v1::Event::Closed => entry.closed = true,
-            zwlr_foreign_toplevel_handle_v1::Event::Done => {
-                session.sync_toplevels();
-            }
-            _ => {}
+        }
+        if sync {
+            session.sync_toplevels();
         }
     }
 }

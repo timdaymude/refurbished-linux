@@ -4,6 +4,11 @@ BROWSER=brave-browser
 MOZ_ENABLE_WAYLAND=1
 QT_QPA_PLATFORM=wayland
 GDK_BACKEND=wayland,x11
+# Name the cursor theme explicitly. Without a theme wlroots falls back to the
+# bare "left_ptr" name, and on a machine whose icon theme does not provide it
+# the pointer can keep the last shape a client asked for (a text bar, a resize
+# arrow) after the interaction is over. The theme ships in adwaita-icon-theme.
+XCURSOR_THEME=Adwaita
 XCURSOR_SIZE=24
 GTK_THEME=Adwaita:dark
 QT_STYLE_OVERRIDE=Adwaita-Dark

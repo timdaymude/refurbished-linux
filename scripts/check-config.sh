@@ -13,8 +13,8 @@ ok()  { printf '  ok   %s\n' "$*"; }
 
 echo "== shell scripts parse with the shell that will run them"
 for f in "$ROOT"/scripts/*.sh "$DISTRO"/config/hooks/normal/*.hook.chroot \
-         "$INC/usr/bin/refurb-session" "$INC"/usr/lib/refurb/refurb-apt \
-         "$INC"/usr/lib/refurb/refurb-update; do
+         "$INC/usr/bin/refurb-session" "$INC"/usr/lib/refurb/*; do
+    [ -f "$f" ] || continue
     if sh -n "$f" 2>/dev/null; then ok "${f#$ROOT/}"; else err "${f#$ROOT/} (sh -n)"; fi
 done
 
@@ -48,6 +48,12 @@ echo "== live-build configuration is complete"
 for f in common package-lists/refurb-base.list.chroot \
          package-lists/refurb-desktop.list.chroot package-lists/refurb-browser.list.chroot \
          archives/brave.list.chroot archives/brave.key.chroot \
+         archives/jellyfin.list.chroot archives/jellyfin.key.chroot \
+         package-lists/refurb-apps.list.chroot \
+         hooks/normal/0700-input.hook.chroot \
+         includes.chroot/etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb \
+         includes.chroot/usr/lib/refurb/refurb-cockpit \
+         includes.chroot/usr/share/applications/refurb-cockpit-remote.desktop \
          hooks/normal/0100-identity.hook.chroot hooks/normal/0200-no-background-work.hook.chroot \
          includes.chroot/usr/share/wayland-sessions/refurb.desktop \
          includes.chroot/etc/xdg/labwc/rc.xml \
@@ -76,6 +82,37 @@ if [ "$(grep -c 'NOPASSWD' "$INC/etc/sudoers.d/refurb-helpers")" = 1 ] && \
 else
     err "unexpected sudoers content"
 fi
+
+echo "== the power key is handled by the desktop, not by logind alone"
+# The desktop takes a low-level inhibitor; logind keeps its normal action for
+# the case where no desktop is running at all.
+if [ -x "$INC/usr/lib/refurb/session-inhibit" ] && \
+   grep -q 'systemd-inhibit' "$INC/usr/lib/refurb/session-inhibit" && \
+   grep -q 'handle-power-key' "$INC/usr/lib/refurb/session-inhibit" && \
+   grep -q 'session-inhibit' "$INC/etc/xdg/labwc/autostart"; then
+    ok "the session inhibits logind's power-key handling"
+else
+    err "nothing takes the power key away from logind"
+fi
+if grep -q '^HandlePowerKey=poweroff' "$INC/etc/systemd/logind.conf.d/99-refurb.conf"; then
+    ok "without a desktop the power key still switches off"
+else
+    err "logind no longer has a power-key action for a machine with no session"
+fi
+if grep -q 'XF86PowerOff' "$INC/etc/xdg/labwc/rc.xml" && \
+   grep -q 'refurb-shell --send power' "$INC/etc/xdg/labwc/rc.xml"; then
+    ok "labwc sends the power key to the confirmation dialog"
+else
+    err "the power key is not bound to the confirmation dialog"
+fi
+
+# Every top-row control the Chromebook remap promises. A missing line here means
+# a key that silently does nothing on the hardware it was written for.
+missing=""
+for code in 40 41 42 43 44; do
+    grep -q "KEYBOARD_KEY_$code=" "$INC/etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb" || missing="$missing $code"
+done
+[ -z "$missing" ] && ok "hwdb maps the whole Chromebook top row" || err "hwdb is missing KEYBOARD_KEY_$missing"
 
 echo "== no update daemon, packagekit or indexer is enabled"
 if grep -Rqs 'unattended-upgrades.service\|packagekit.service' "$DISTRO/config/hooks/normal/0200-no-background-work.hook.chroot"; then

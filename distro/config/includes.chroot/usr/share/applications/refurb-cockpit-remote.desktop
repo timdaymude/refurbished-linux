@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Remote administration
+Comment=Allow Cockpit from another computer on this network
+Exec=foot -e /usr/lib/refurb/refurb-cockpit
+Icon=application-x-executable
+Terminal=false
+Categories=System;
+X-Refurb-Group=system

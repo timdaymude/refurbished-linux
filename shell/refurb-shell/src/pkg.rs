@@ -97,21 +97,14 @@ pub fn search(query: &str, limit: usize) -> Vec<Pkg> {
 
     let needle = query.to_lowercase();
     let mut hits: Vec<Pkg> = Vec::new();
-    for line in text.lines() {
-        let Some((name, summary)) = line.split_once(" - ") else {
-            continue;
-        };
-        let name = name.trim();
-        if !valid_package_name(name) {
-            continue;
-        }
-        hits.push(Pkg {
-            name: name.to_string(),
-            summary: summary.trim().to_string(),
-            installed: installed.contains(name),
-        });
-        if hits.len() >= limit * 3 {
-            break;
+    collect(&text, &installed, &mut hits, limit * 3);
+    // A package name is not how people search. "video player", "photo
+    // editor" and "jellyfin" are descriptions, and `apt-cache search` covers
+    // them when `--names-only` is dropped. The name search still runs first so
+    // a package called `firefox-esr` is never buried under its description.
+    if hits.len() < 3 && !descriptive {
+        if let Some(text) = run("apt-cache", &["search", &term]) {
+            collect(&text, &installed, &mut hits, limit * 3);
         }
     }
     hits.sort_by(|a, b| {
@@ -132,6 +125,31 @@ pub fn search(query: &str, limit: usize) -> Vec<Pkg> {
     });
     hits.truncate(limit);
     hits
+}
+
+/// Add the `name - summary` lines of an `apt-cache` reply, skipping anything
+/// already listed or not a valid Debian package name.
+fn collect(text: &str, installed: &HashSet<String>, hits: &mut Vec<Pkg>, cap: usize) {
+    for line in text.lines() {
+        let Some((name, summary)) = line.split_once(" - ") else {
+            continue;
+        };
+        let name = name.trim();
+        if !valid_package_name(name) {
+            continue;
+        }
+        if hits.iter().any(|p| p.name == name) {
+            continue;
+        }
+        hits.push(Pkg {
+            name: name.to_string(),
+            summary: summary.trim().to_string(),
+            installed: installed.contains(name),
+        });
+        if hits.len() >= cap {
+            return;
+        }
+    }
 }
 
 /// Install or remove a package through the privileged helper, streaming the

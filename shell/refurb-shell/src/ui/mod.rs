@@ -5,6 +5,7 @@
 //! a Wayland surface in a live session and to a PNG in a unit test.
 
 pub mod bar;
+pub mod dialog;
 pub mod launcher;
 pub mod quick;
 pub mod settings;
@@ -31,6 +32,8 @@ pub enum Surface {
     BarOn(u32),
     Launcher,
     Quick,
+    /// The power confirmation: a full-screen modal that holds the keyboard.
+    Dialog,
     Software,
     Settings,
 }
@@ -128,6 +131,12 @@ pub enum Action {
     SearchWeb,
     QuickToggle,
     QuickClose,
+    /// Answer the power confirmation without a power action.
+    DialogCancel,
+    /// Carry out the power action the confirmation is asking about.
+    DialogConfirm,
+    /// Move the keyboard focus between Cancel and the destructive button.
+    DialogFocus(bool),
     WifiPower,
     WifiList,
     WifiRescan,
@@ -247,11 +256,26 @@ impl Default for Section {
     }
 }
 
+/// Whether the taskbar sits along the bottom edge of the screen.
+///
+/// The session anchors the bar and the quick panel draws itself beside it, so
+/// both have to read this the same way.
+pub fn bar_is_bottom() -> bool {
+    std::env::var("REFURB_BAR_POSITION")
+        .map(|value| !value.trim().eq_ignore_ascii_case("top"))
+        .unwrap_or(true)
+}
+
 #[derive(Clone, Debug)]
 pub struct State {
     pub view: Surface,
     pub launcher_open: bool,
     pub quick_open: bool,
+    /// The power action waiting for confirmation, if the dialog is open.
+    pub confirm: Option<PowerAction>,
+    /// True when the destructive button has the keyboard focus. Cancel is the
+    /// default, so a stray Enter can never power the machine off.
+    pub confirm_danger: bool,
     pub window: Option<WindowKind>,
     pub query: String,
     pub focus: Focus,
@@ -284,6 +308,8 @@ impl Default for State {
             view: Surface::Bar,
             launcher_open: false,
             quick_open: false,
+            confirm: None,
+            confirm_danger: false,
             window: None,
             query: String::new(),
             focus: Focus::None,
@@ -421,7 +447,7 @@ impl App {
         match surface {
             Surface::Desktop | Surface::DesktopOn(_) => paint_desktop_background(&mut pm),
             Surface::Bar | Surface::BarOn(_) => pm.fill(theme::panel()),
-            Surface::Launcher | Surface::Quick => pm.fill(Color::TRANSPARENT),
+            Surface::Launcher | Surface::Quick | Surface::Dialog => pm.fill(Color::TRANSPARENT),
             Surface::Software | Surface::Settings => pm.fill(theme::card()),
         }
 
@@ -440,6 +466,7 @@ impl App {
                 Surface::Bar | Surface::BarOn(_) => bar::draw(&mut cx, w as f32, h as f32),
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
+                Surface::Dialog => dialog::draw(&mut cx, w as f32, h as f32),
                 Surface::Software => software::draw(&mut cx, w as f32, h as f32),
                 Surface::Settings => settings::draw(&mut cx, w as f32, h as f32),
             }

@@ -211,13 +211,15 @@ impl App {
 }
 
 fn spawn_detached(prog: &str, args: &[&str]) -> std::io::Result<()> {
-    Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
+    // Every launched application ends up as a child of the shell. Without a
+    // wait they pile up as zombies when they close, so the reaper collects them.
+    crate::reaper::spawn_detached(
+        prog,
+        args,
+        Stdio::null(),
+        Stdio::null(),
+        Stdio::null(),
+    )
 }
 
 /// Relevance of `app` for query `q`; `None` means "no match".

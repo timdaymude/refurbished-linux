@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 #[derive(Clone, Debug, Default)]
 pub struct App {
@@ -22,6 +22,9 @@ pub struct App {
     pub web: Option<String>,
     /// `X-Refurb-Pin`: 1..=9 pins the app to the launcher grid.
     pub pin: Option<u8>,
+    /// `X-Refurb-Taskbar`: 1 puts the app on the taskbar even when it is not
+    /// running. Only the two daily applications carry it.
+    pub taskbar: bool,
     /// `X-Refurb-Group`: `web`, `system` or empty.
     pub group: String,
 }
@@ -122,6 +125,7 @@ pub fn parse_desktop(id: &str, text: &str) -> Option<App> {
             "X-Refurb-Web" => app.web = Some(value.to_string()),
             "X-Refurb-Group" => app.group = value.to_string(),
             "X-Refurb-Pin" => app.pin = value.parse().ok(),
+            "X-Refurb-Taskbar" => app.taskbar = value.eq_ignore_ascii_case("1") || value.eq_ignore_ascii_case("true"),
             _ => {}
         }
     }
@@ -262,6 +266,49 @@ pub fn search(apps: &[App], q: &str) -> Vec<usize> {
     hits.into_iter().map(|(_, i)| i).collect()
 }
 
+/// The application shortcut file for `id`, wherever it was installed.
+pub fn desktop_file(id: &str) -> Option<PathBuf> {
+    dirs()
+        .into_iter()
+        .map(|dir| dir.join(format!("{id}.desktop")))
+        .find(|path| path.is_file())
+}
+
+/// Whether a window belongs to `app`. The compositor reports the application
+/// id the program set, which is the desktop file's stem for every program this
+/// image ships (`brave-browser`, `pcmanfm`, ...), or its exec name.
+pub fn matches_toplevel(app: &App, app_id: &str) -> bool {
+    let id = app_id.trim().to_lowercase();
+    if id.is_empty() {
+        return false;
+    }
+    let stem = id.strip_suffix(".desktop").unwrap_or(&id);
+    if app.id.to_lowercase() == stem {
+        return true;
+    }
+    split_exec(&app.exec).first().is_some_and(|program| {
+        let program = program.to_lowercase();
+        let base = PathBuf::from(&program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_string)
+            .unwrap_or(program);
+        base == stem
+    })
+}
+
+/// Applications pinned to the taskbar, in pin order.
+pub fn taskbar_pins(apps: &[App]) -> Vec<usize> {
+    let mut pins: Vec<(u8, usize)> = apps
+        .iter()
+        .enumerate()
+        .filter(|(_, app)| app.taskbar)
+        .map(|(index, app)| (app.pin.unwrap_or(u8::MAX), index))
+        .collect();
+    pins.sort();
+    pins.into_iter().map(|(_, index)| index).collect()
+}
+
 /// Pinned apps in pin order.
 pub fn pinned(apps: &[App]) -> Vec<usize> {
     let mut pins: Vec<(u8, usize)> = apps
@@ -277,7 +324,7 @@ pub fn pinned(apps: &[App]) -> Vec<usize> {
 mod tests {
     use super::*;
 
-    const BRAVE: &str = "[Desktop Entry]\nType=Application\nName=Brave\nComment=Private web browser\nExec=brave-browser %U\nIcon=brave-browser\nX-Refurb-Pin=1\n";
+    const BRAVE: &str = "[Desktop Entry]\nType=Application\nName=Brave\nComment=Private web browser\nExec=brave-browser %U\nIcon=brave-browser\nX-Refurb-Pin=1\nX-Refurb-Taskbar=1\n";
 
     const M365: &str = "[Desktop Entry]\nType=Application\nName=Microsoft 365\nComment=Word, Excel and PowerPoint on the web\nExec=brave-browser --new-window https://www.office.com\nX-Refurb-Web=https://www.office.com\nX-Refurb-Pin=7\nX-Refurb-Group=web\n";
 
@@ -288,8 +335,34 @@ mod tests {
         let a = parse_desktop("brave-browser", BRAVE).unwrap();
         assert_eq!(a.name, "Brave");
         assert_eq!(a.pin, Some(1));
+        assert!(a.taskbar);
         assert!(!a.is_web());
         assert_eq!(split_exec(&a.exec), vec!["brave-browser"]);
+    }
+
+    #[test]
+    fn only_taskbar_entries_are_pinned_to_the_bar() {
+        let brave = parse_desktop("brave-browser", BRAVE).unwrap();
+        let other = parse_desktop("terminal", "[Desktop Entry]\nType=Application\nName=Terminal\nExec=foot\nX-Refurb-Pin=6\n").unwrap();
+        let apps = vec![other, brave];
+        let pins = taskbar_pins(&apps);
+        assert_eq!(pins.len(), 1);
+        assert_eq!(apps[pins[0]].name, "Brave");
+    }
+
+    #[test]
+    fn windows_are_matched_to_their_desktop_entry() {
+        let brave = parse_desktop("brave-browser", BRAVE).unwrap();
+        assert!(matches_toplevel(&brave, "brave-browser"));
+        assert!(matches_toplevel(&brave, "brave-browser.desktop"));
+        assert!(!matches_toplevel(&brave, "pcmanfm"));
+        assert!(!matches_toplevel(&brave, ""));
+        let files = parse_desktop(
+            "refurb-files",
+            "[Desktop Entry]\nType=Application\nName=Files\nExec=pcmanfm\n",
+        )
+        .unwrap();
+        assert!(matches_toplevel(&files, "pcmanfm"));
     }
 
     #[test]

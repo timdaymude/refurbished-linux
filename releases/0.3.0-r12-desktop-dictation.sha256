@@ -1,0 +1,65 @@
+Reawakening OS 0.3.0-r12 — desktop icons, pinned taskbar, offline dictation, Jellyfin audio
+
+file:   reawakening-os-0.3.0-r12-amd64.iso
+size:   1158348800 bytes
+sha256: 9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6
+
+The desktop is now usable without installing a full desktop environment.
+
+- Brave and Files are pinned to the bar. The chips are drawn first and stay
+  visible when the application is closed; one click starts it or focuses its
+  running window; closing it removes only the running state; and a running
+  window never adds a second chip next to its pin. Pins come from a new
+  X-Refurb-Taskbar=1 key in the two .desktop files, so the set is data, not code.
+
+- ~/Desktop is drawn as icons on the existing wallpaper surface, below windows
+  and outside the bar: files, folders and .desktop shortcuts, primary screen
+  only. Double click opens (folders in PCManFM, shortcuts only if trusted,
+  everything else through xdg-open), dragging snaps to a fixed grid and saves
+  to ~/.config/refurb/desktop-layout, right-click gives Open/Rename…/Move to
+  Trash on an icon and New Folder/Add Application Shortcut/Refresh on the
+  wallpaper. Rename is inline (Enter commits, Escape cancels); delete moves to
+  the freedesktop trash with a .trashinfo entry; a new file appears within two
+  seconds because the directory signature is checked on the existing tick.
+
+- A .desktop shortcut is only executed when it is a regular file, owned by the
+  user, not writable by group or others and marked executable. A file dropped by
+  a browser is refused with a message instead of being run.
+
+- Alt+Z toggles offline dictation. The helper loads the 68 MB Vosk English
+  model, records 16 kHz mono through pw-record and types through wtype into the
+  focused window; the bar shows a microphone pill (Starting…, Listening, or the
+  error). Stopping ends the recorder immediately and leaves no process, model or
+  microphone stream resident. A microphone that delivers no audio for six
+  seconds is reported as unavailable instead of showing "Listening" forever.
+  Ctrl+Z is untouched and still reaches the application as Undo.
+
+- Jellyfin's late audio is addressed as output-device suspension:
+  /etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf sets
+  node.suspend-on-idle = false for the built-in analog output only, so the codec
+  is not asleep when Chromium creates its stream. HDMI and USB outputs keep the
+  default. No audio service was added.
+
+- refurb-diag gained audio-suspension and dictation sections, and the helper is
+  also reachable as /usr/bin/refurb-dictate.
+
+Verified in QEMU from this ISO (system emulation, no KVM, no GPU): pins visible
+with both applications closed and after relaunch, single click launches Brave
+and Files, a second click focuses instead of duplicating, closing Brave keeps
+its pin and clears its running state; desktop files and folders appear, a
+double click opens PCManFM, drag moves Photos to column 3 and the layout file
+records it, the icon menu's Rename… field renames a folder on disk, Move to
+Trash puts notes.txt in ~/.local/share/Trash with a .trashinfo,
+New Folder creates one on the wallpaper, Files.desktop launches through the
+trusted path once executable; Alt+Z shows Starting… then Listening, the second
+Alt+Z removes pill, helper and pw-record and both state files, and
+refurb-dictate type inserted text into a focused foot window; the analog sink
+carries node.suspend-on-idle = "false"; 0 zombies; cargo test --release 35/35;
+scripts/check-config.sh passes.
+
+Not verified: the audio fix's actual effect (this QEMU cannot open a host audio
+device, so its sink reports suspended either way), dictation accuracy and
+microphone behaviour on the Chromebook, the top row and backlight, Jellyfin
+playback against a real server, and Cockpit login from another computer. One
+QEMU-only artefact: after a window closes under the pointer, a click on the
+empty wallpaper can be ignored until the pointer crosses the bar and back.

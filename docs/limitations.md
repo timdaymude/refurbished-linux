@@ -114,3 +114,55 @@ OS. It is ordered by how much it could hurt.
   fires.
 - **`iproute2` is not installed**, so `refurb-diag` cannot print `ss` output; use
   `lsof`/`/proc/net/tcp` or install it, if that is ever needed.
+
+## Round 12 additions
+
+- **Desktop icons belong to the primary screen.** The wallpaper is painted on
+  every monitor, but files are shown only on the first one: a second monitor
+  would otherwise present a second, independent arrangement of the same files.
+- **Deleting from the desktop does not ask.** It moves the item to the
+  freedesktop trash (restorable in PCManFM), but there is no confirmation
+  dialog. Rename is committed with Enter and cancelled with Escape.
+- **A desktop shortcut is only run when it is trusted**: owned by the user, not
+  writable by group or others, executable, and not a symlink. A `.desktop` file
+  copied by hand from `/usr/share/applications` works; one dropped by a browser
+  normally will not, and the desktop says why instead of running it.
+- **Shortcuts can only be added for installed applications listed in the pinned
+  set.** Dragging a `.desktop` file into `~/Desktop` with PCManFM works too; a
+  full application picker is not part of this round.
+- **The icon grid is five rows of fixed cells.** Positions snap to the grid
+  rather than free pixel placement, which is what makes them survive a change of
+  resolution. A very small screen shows fewer columns, not smaller icons.
+- **Alt+Z dictation is English-only and needs the 68 MB Vosk model**, which is
+  downloaded while the image is built. It runs offline, but the first Alt+Z of a
+  session loads the model (a second or two; emulated QEMU is slower).
+- **Dictation has no punctuation or capitalisation**, because the small Vosk
+  model does not produce it. Text is typed as each phrase completes and at the
+  end, into whichever window has the focus at that moment; changing focus
+  mid-dictation sends the text to the new window.
+- **Dictation accuracy on the Chromebook's microphone is unverified.** The
+  engine, model and typing path are tested; microphone response, gain and
+  accuracy are hardware tests.
+- **The Jellyfin audio-delay fix is unverified on the real codec.** The
+  WirePlumber rule is verified to load and to leave `node.suspend-on-idle =
+  false` on the analog sink, but the emulated QEMU codec still reports the node
+  as `suspended` (QEMU has no working host audio backend here), so neither the
+  keep-awake behaviour nor "sound starts with the picture" could be observed.
+  Both need the Chromebook's codec and speakers.
+- **Keeping the analog sink awake costs idle power.** That is the trade for the
+  audio fix; HDMI and USB outputs still suspend when idle.
+- **No SMD Linux source was available**, so r12's dictation is a new
+  implementation rather than a port. See `docs/round-12.md` section 3.
+- **The desktop rescans `~/Desktop` every two seconds at most**, comparing a
+  signature rather than using inotify. A file written and deleted within one
+  interval is not noticed; ordinary use is unaffected.
+- **A click on the wallpaper can be lost after a window closes under the
+  pointer.** The shell learns which surface the pointer is on from the
+  compositor's enter/leave events; in QEMU a right-click on the empty desktop was
+  ignored until the pointer crossed the bar and came back. Moving the pointer
+  restores it, and clicks on icons or windows are unaffected.
+- **A microphone that produces no audio for six seconds is treated as a
+  failure.** Dictation then says "no microphone is available" and exits instead
+  of showing "Listening" forever. On hardware with a working microphone the
+  stream always carries data, so this only surfaces for a missing, muted or
+  permission-blocked device.

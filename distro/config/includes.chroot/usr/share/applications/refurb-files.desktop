@@ -7,4 +7,5 @@ Icon=application-x-executable
 Terminal=false
 Categories=System;FileManager;
 X-Refurb-Pin=2
+X-Refurb-Taskbar=1
 X-Refurb-Group=system

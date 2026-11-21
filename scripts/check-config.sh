@@ -15,6 +15,9 @@ echo "== shell scripts parse with the shell that will run them"
 for f in "$ROOT"/scripts/*.sh "$DISTRO"/config/hooks/normal/*.hook.chroot \
          "$INC/usr/bin/refurb-session" "$INC"/usr/lib/refurb/*; do
     [ -f "$f" ] || continue
+    # refurb-dictate is Python, not shell; it is syntax-checked below with the
+    # interpreter that will run it.
+    case "$f" in *refurb-dictate) continue ;; esac
     if sh -n "$f" 2>/dev/null; then ok "${f#$ROOT/}"; else err "${f#$ROOT/} (sh -n)"; fi
 done
 
@@ -53,6 +56,9 @@ for f in common package-lists/refurb-base.list.chroot \
          hooks/normal/0700-input.hook.chroot \
          includes.chroot/etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb \
          includes.chroot/usr/lib/refurb/refurb-cockpit \
+         includes.chroot/usr/lib/refurb/refurb-dictate \
+         includes.chroot/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf \
+         hooks/normal/0800-dictation.hook.chroot \
          includes.chroot/usr/share/applications/refurb-cockpit-remote.desktop \
          hooks/normal/0100-identity.hook.chroot hooks/normal/0200-no-background-work.hook.chroot \
          includes.chroot/usr/share/wayland-sessions/refurb.desktop \
@@ -74,6 +80,44 @@ print(f"  {'ok  ' if sorted(pins) == want else 'FAIL'} pins {sorted(pins)}")
 for k in sorted(pins):
     print(f"       {k}: {pins[k]}")
 PY
+
+echo "== the taskbar carries Brave and Files when they are closed"
+python3 - "$INC" <<'PY'
+import pathlib, sys
+entries = []
+for p in pathlib.Path(sys.argv[1]).rglob("*.desktop"):
+    for line in p.read_text().splitlines():
+        if line.strip() == "X-Refurb-Taskbar=1":
+            entries.append(p.name)
+want = ["brave-browser.desktop", "refurb-files.desktop"]
+print(f"  {'ok  ' if sorted(entries) == want else 'FAIL'} taskbar pins {sorted(entries)}")
+PY
+
+echo "== Alt+Z dictation is wired to a working pipeline"
+if [ -x "$INC/usr/lib/refurb/refurb-dictate" ] && \
+   python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' \
+       "$INC/usr/lib/refurb/refurb-dictate" && \
+   grep -q 'refurb-dictate toggle' "$INC/etc/xdg/labwc/rc.xml" && \
+   grep -q 'key="A-z"' "$INC/etc/xdg/labwc/rc.xml" && \
+   grep -q 'wtype' "$INC/usr/lib/refurb/refurb-dictate"; then
+    ok "Alt+Z runs the offline dictation helper"
+else
+    err "Alt+Z is not connected to a dictation helper"
+fi
+if grep -q '^wtype$' "$DISTRO/config/package-lists/refurb-desktop.list.chroot" && \
+   grep -q 'import vosk' "$DISTRO/config/hooks/normal/0800-dictation.hook.chroot"; then
+    ok "wtype and the speech engine are installed at build time"
+else
+    err "the dictation dependencies are missing from the image"
+fi
+
+echo "== the analog sink is kept awake (the Jellyfin audio delay)"
+if grep -q 'suspend-on-idle = false' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf" && \
+   grep -q 'alsa_output.*analog' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf"; then
+    ok "only the analog output opts out of idle suspension"
+else
+    err "the analog output still suspends on idle"
+fi
 
 echo "== sudoers rule is limited to the two helpers"
 if [ "$(grep -c 'NOPASSWD' "$INC/etc/sudoers.d/refurb-helpers")" = 1 ] && \

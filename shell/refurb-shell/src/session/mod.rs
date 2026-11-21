@@ -28,6 +28,8 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::{
 };
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
+use crate::apps;
+use crate::desktop as desk;
 use crate::keys::{Key, Keymap, Modifiers};
 use crate::system;
 use crate::ui::{self, Action, App, Focus, Section, SliderKind, Surface, Tool, WindowKind};
@@ -210,6 +212,14 @@ pub struct Session {
     quick_card_height: u32,
     /// Whether the power confirmation currently holds the keyboard focus.
     dialog_keys: bool,
+    /// Whether the desktop holds the keyboard because an icon is being renamed.
+    desk_keys: bool,
+    /// True between a left press and its release: desktop icons are dragged
+    /// only while the button is down.
+    pointer_down: bool,
+    /// What the bar is showing about Alt+Z dictation, and when it last checked.
+    dictation: Option<String>,
+    last_dictation: Instant,
     /// Hardware writes are coalesced on these worker threads: a drag produces
     /// hundreds of positions but only the newest one is worth applying.
     volume_tx: Sender<f32>,
@@ -270,6 +280,11 @@ pub fn run() -> Result<(), String> {
     let (tx, rx) = mpsc::channel();
     let (volume_tx, brightness_tx) = start_control_workers(&tx);
     let now = Instant::now();
+    // The desktop exists before the first frame, so a file already in
+    // ~/Desktop is on screen as soon as the wallpaper is.
+    let mut app = App::new();
+    desk::ensure_dir();
+    desk::refresh(&mut app.st.desk, true);
     // The taskbar belongs along the bottom edge of every screen, which is what
     // this desktop has been asked for since 0.2. It used to need
     // REFURB_BAR_POSITION=bottom and nothing set it, so every image shipped with
@@ -293,7 +308,7 @@ pub fn run() -> Result<(), String> {
         pointer: None,
         keymap: Keymap::fallback(),
         modifiers: Modifiers::default(),
-        app: App::new(),
+        app,
         surfaces: Vec::new(),
         outputs,
         output_globals,
@@ -313,6 +328,10 @@ pub fn run() -> Result<(), String> {
         quick_keys: false,
         quick_card_height: 0,
         dialog_keys: false,
+        desk_keys: false,
+        pointer_down: false,
+        dictation: None,
+        last_dictation: now - Duration::from_secs(5),
         volume_tx,
         brightness_tx,
         ipc: start_ipc(),
@@ -641,6 +660,24 @@ impl Session {
         } else {
             self.dialog_keys = false;
             self.close_surface(Surface::Dialog);
+        }
+
+        // An icon can only be renamed if the keyboard reaches the desktop. The
+        // wallpaper layer normally takes no keyboard at all, so renaming is the
+        // one moment it asks for it, and it gives it back straight afterwards.
+        let desk_keys = self.app.st.desk.renaming.is_some();
+        if desk_keys != self.desk_keys {
+            if let Some(idx) = self.entry_index(Surface::Desktop) {
+                if let Role::Layer(surface) = &self.surfaces[idx].role {
+                    surface.set_keyboard_interactivity(if desk_keys {
+                        zwlr_layer_surface_v1::KeyboardInteractivity::Exclusive
+                    } else {
+                        zwlr_layer_surface_v1::KeyboardInteractivity::None
+                    });
+                    self.surfaces[idx].wl.commit();
+                }
+            }
+            self.desk_keys = desk_keys;
         }
 
         for kind in [WindowKind::Software, WindowKind::Settings] {
@@ -996,6 +1033,107 @@ impl Session {
                     entry.handle.activate(seat);
                 }
             }
+            Action::LaunchPinned(index) => self.launch_pinned(index),
+            Action::DeskIcon(index) => self.desk_press(index),
+            Action::DeskMenu(index) => {
+                self.app.st.desk.selected = Some(index);
+                self.app.st.desk.menu = Some(desk::Menu {
+                    icon: Some(index),
+                    shortcuts: false,
+                    x: self.pointer_pos.0 as f32,
+                    y: self.pointer_pos.1 as f32,
+                });
+            }
+            Action::DeskMenuEmpty => {
+                self.app.st.desk.selected = None;
+                self.app.st.desk.menu = Some(desk::Menu {
+                    icon: None,
+                    shortcuts: false,
+                    x: self.pointer_pos.0 as f32,
+                    y: self.pointer_pos.1 as f32,
+                });
+            }
+            Action::DeskMenuClose => self.app.st.desk.menu = None,
+            Action::DeskMenuShortcuts => {
+                if let Some(menu) = &mut self.app.st.desk.menu {
+                    menu.shortcuts = true;
+                }
+            }
+            Action::DeskShortcut(index) => {
+                self.app.st.desk.menu = None;
+                let Some(app) = self.app.st.apps.get(index).cloned() else {
+                    return;
+                };
+                match desk::install_shortcut(&app) {
+                    Ok(name) => {
+                        desk::refresh(&mut self.app.st.desk, true);
+                        self.app.st.desk.say(format!("Added {name} to the desktop"));
+                    }
+                    Err(error) => self.app.st.desk.say(error),
+                }
+            }
+            Action::DeskOpen => {
+                self.app.st.desk.menu = None;
+                self.open_desktop_icon();
+            }
+            Action::DeskRename => {
+                if let Some(index) = self.app.st.desk.selected {
+                    if let Some(icon) = self.app.st.desk.icons.get(index) {
+                        self.app.st.desk.renaming = Some((index, icon.file.clone()));
+                    }
+                }
+                self.app.st.desk.menu = None;
+            }
+            Action::DeskRenameChar(c) => {
+                if let Some((_, text)) = &mut self.app.st.desk.renaming {
+                    if !c.is_control() && text.chars().count() < 120 {
+                        text.push(c);
+                    }
+                }
+            }
+            Action::DeskRenameBackspace => {
+                if let Some((_, text)) = &mut self.app.st.desk.renaming {
+                    text.pop();
+                }
+            }
+            Action::DeskRenameCommit => self.commit_rename(),
+            Action::DeskRenameCancel => self.app.st.desk.renaming = None,
+            Action::DeskDelete => {
+                self.app.st.desk.menu = None;
+                if let Some(index) = self.app.st.desk.selected {
+                    if let Some(icon) = self.app.st.desk.icons.get(index).cloned() {
+                        match desk::trash(&icon) {
+                            Ok(()) => {
+                                self.app.st.desk.say(format!("{} moved to Trash", icon.name));
+                                desk::refresh(&mut self.app.st.desk, true);
+                            }
+                            Err(error) => self.app.st.desk.say(error),
+                        }
+                    }
+                }
+            }
+            Action::DeskNewFolder => {
+                self.app.st.desk.menu = None;
+                match desk::new_folder() {
+                    Ok(name) => {
+                        desk::refresh(&mut self.app.st.desk, true);
+                        self.app.st.desk.selected = self
+                            .app
+                            .st
+                            .desk
+                            .icons
+                            .iter()
+                            .position(|icon| icon.file == name);
+                        self.app.st.desk.say(format!("Created {name}"));
+                    }
+                    Err(error) => self.app.st.desk.say(error),
+                }
+            }
+            Action::DeskRefresh => {
+                self.app.st.desk.menu = None;
+                desk::refresh(&mut self.app.st.desk, true);
+                self.app.st.desk.say("Desktop refreshed");
+            }
             Action::QuickToggle => {
                 self.app.st.quick_open = !self.app.st.quick_open;
                 if !self.app.st.quick_open {
@@ -1312,6 +1450,90 @@ impl Session {
         }
     }
 
+    // -- desktop ---------------------------------------------------------
+
+    /// A taskbar icon focuses its running window, or starts the application.
+    fn launch_pinned(&mut self, index: usize) {
+        let Some(app) = self.app.st.apps.get(index).cloned() else {
+            return;
+        };
+        if let Some(position) = self
+            .app
+            .st
+            .toplevels
+            .iter()
+            .position(|toplevel| apps::matches_toplevel(&app, &toplevel.app_id))
+        {
+            if let (Some(entry), Some(seat)) = (self.toplevels.get(position), self.seat.as_ref()) {
+                entry.handle.activate(seat);
+            }
+            return;
+        }
+        if let Err(error) = app.launch() {
+            eprintln!("refurb-shell: could not launch {}: {error}", app.name);
+        }
+    }
+
+    fn open_desktop_icon(&mut self) {
+        let Some(index) = self.app.st.desk.selected else {
+            return;
+        };
+        let Some(icon) = self.app.st.desk.icons.get(index).cloned() else {
+            return;
+        };
+        self.app.st.desk.menu = None;
+        if let Err(error) = desk::open(&icon) {
+            self.app.st.desk.say(error);
+        }
+    }
+
+    fn commit_rename(&mut self) {
+        let Some((index, name)) = self.app.st.desk.renaming.take() else {
+            return;
+        };
+        let Some(icon) = self.app.st.desk.icons.get(index).cloned() else {
+            return;
+        };
+        match desk::rename(&icon, &name) {
+            Ok(()) => {
+                desk::refresh(&mut self.app.st.desk, true);
+                self.app.st.desk.say(format!("Renamed to {name}"));
+            }
+            Err(error) => {
+                self.app.st.desk.say(error);
+                self.app.st.desk.renaming = Some((index, name));
+            }
+        }
+    }
+
+    /// A left press on an icon: select it, start a drag, or open it when this
+    /// is the second press of a double click.
+    fn desk_press(&mut self, index: usize) {
+        if self.app.st.desk.renaming.is_some() {
+            self.commit_rename();
+            return;
+        }
+        let now = Instant::now();
+        let double = self
+            .app
+            .st
+            .desk
+            .last_click
+            .map(|(last, at)| last == index && now.duration_since(at) < Duration::from_millis(420))
+            .unwrap_or(false);
+        self.app.st.desk.last_click = Some((index, now));
+        self.app.st.desk.selected = Some(index);
+        self.app.st.desk.menu = None;
+        if double {
+            self.open_desktop_icon();
+            return;
+        }
+        self.app.st.desk.press = Some(desk::Press {
+            icon: index,
+            at: self.pointer_pos,
+        });
+    }
+
     // -- background work -------------------------------------------------
 
     /// Read the machine on a worker thread. `nmcli` and `bluetoothctl` take
@@ -1578,6 +1800,17 @@ impl Session {
     // -- input -----------------------------------------------------------
 
     fn on_key(&mut self, key: Key) {
+        // A desktop icon being renamed owns the keyboard until Enter or Escape.
+        if self.app.st.desk.renaming.is_some() {
+            match key {
+                Key::Char(c) => self.dispatch(Action::DeskRenameChar(c)),
+                Key::Backspace => self.dispatch(Action::DeskRenameBackspace),
+                Key::Enter => self.dispatch(Action::DeskRenameCommit),
+                Key::Escape => self.dispatch(Action::DeskRenameCancel),
+                _ => {}
+            }
+            return;
+        }
         // The confirmation is modal: while it is open, Escape cancels and the
         // arrow keys or Tab move between the two buttons. Focus starts on
         // Cancel, so Enter without a deliberate move never powers off.
@@ -1667,8 +1900,16 @@ impl Session {
         self.redraw_visible();
     }
 
-    fn on_pointer_button(&mut self, pressed: bool, serial: u32) {
+    fn on_pointer_button(&mut self, pressed: bool, button: u32, serial: u32) {
+        const LEFT: u32 = 0x110;
+        const RIGHT: u32 = 0x111;
         if !pressed {
+            self.pointer_down = false;
+            if self.app.st.desk.press.take().is_some() {
+                // Dropping an icon is the moment its position becomes the one
+                // the next session opens with.
+                desk::save_layout(&self.app.st.desk.icons);
+            }
             self.drag = None;
             return;
         }
@@ -1685,9 +1926,31 @@ impl Session {
             .rev()
             .find(|(rect, _)| crate::render::contains(*rect, x, y))
             .map(|(rect, action)| (*rect, action.clone()));
+
+        // A right click opens the icon menu, or the desktop's own menu on the
+        // empty wallpaper. There is no other right-click behaviour in the shell.
+        if button == RIGHT {
+            self.pointer_down = false;
+            if !matches!(surface, Surface::Desktop) {
+                return;
+            }
+            match found {
+                Some((_, Action::DeskIcon(index))) => self.dispatch(Action::DeskMenu(index)),
+                _ => self.dispatch(Action::DeskMenuEmpty),
+            }
+            return;
+        }
+        if button != LEFT {
+            return;
+        }
+        self.pointer_down = true;
+
         let Some((rect, action)) = found else {
             // A press on the empty part of a shell surface is "outside" as far
             // as the quick panel is concerned.
+            if self.app.st.desk.menu.is_some() {
+                self.dispatch(Action::DeskMenuClose);
+            }
             if self.app.st.quick_open {
                 self.dispatch(Action::QuickClose);
             }
@@ -1735,6 +1998,37 @@ impl Session {
 
     fn on_pointer_motion(&mut self, position: (f64, f64)) {
         self.pointer_pos = position;
+        // Dragging a desktop icon moves it to the nearest free cell; the icon
+        // never leaves the visible grid, so it cannot be lost off-screen.
+        if self.pointer_down {
+            if let Some(press) = self.app.st.desk.press.clone() {
+                let (mut col, mut row) = desk::cell_at(
+                    position.0 as f32 - desk::CELL_W / 2.0,
+                    position.1 as f32 - desk::CELL_H / 2.0,
+                );
+                row = row.clamp(0, desk::ROWS - 1);
+                col = col.max(0);
+                let current = self
+                    .app
+                    .st
+                    .desk
+                    .icons
+                    .get(press.icon)
+                    .map(|icon| (icon.col, icon.row));
+                if current != Some((col, row)) {
+                    if let Some((c, r)) =
+                        desk::free_cell(&self.app.st.desk.icons, col, row, press.icon)
+                    {
+                        if let Some(icon) = self.app.st.desk.icons.get_mut(press.icon) {
+                            icon.col = c;
+                            icon.row = r;
+                        }
+                        self.invalidate(Some(Surface::Desktop));
+                    }
+                }
+                return;
+            }
+        }
         if let Some((kind, rect)) = self.drag {
             if let Some(value) = fraction(rect, position.0 as f32) {
                 match kind {
@@ -1834,6 +2128,23 @@ impl Session {
             // registry snapshot once a second. Comparing a handful of globals
             // costs nothing when nothing changed.
             self.reconcile_outputs();
+        }
+        // `refresh` compares a cheap directory signature and rescans only when
+        // a file was added, changed or removed.
+        if desk::refresh(&mut self.app.st.desk, false) {
+            self.invalidate(Some(Surface::Desktop));
+        }
+        if self.app.st.desk.expire_notice() {
+            self.invalidate(Some(Surface::Desktop));
+        }
+        if now.duration_since(self.last_dictation) >= Duration::from_millis(900) {
+            self.last_dictation = now;
+            let state = dictation_state();
+            if state != self.dictation {
+                self.dictation = state.clone();
+                self.app.st.dictation = state;
+                self.redraw_bars();
+            }
         }
         if now.duration_since(self.last_status) >= Duration::from_secs(30) {
             self.last_status = now;
@@ -1968,6 +2279,33 @@ fn surface_for(kind: WindowKind) -> Surface {
         WindowKind::Software => Surface::Software,
         WindowKind::Settings => Surface::Settings,
     }
+}
+
+/// What the Alt+Z dictation helper says it is doing. The helper writes one
+/// line and removes the file when it exits; an error is shown for six seconds
+/// so a missing microphone is visible without becoming a permanent badge.
+fn dictation_state() -> Option<String> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let path = dir.join("refurb-dictate.state");
+    let meta = std::fs::metadata(&path).ok()?;
+    let text = std::fs::read_to_string(&path).ok()?.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    if text.starts_with("error") {
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|when| when.elapsed().ok())
+            .map(|age| age.as_secs() > 6)
+            .unwrap_or(false);
+        if stale {
+            return None;
+        }
+    }
+    Some(text)
 }
 
 fn fraction(rect: Rect, x: f32) -> Option<f32> {
@@ -2364,13 +2702,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Session {
                 button,
                 state,
                 ..
-            } if button == 0x110 => {
-                // BTN_LEFT
-                if let WEnum::Value(wl_pointer::ButtonState::Pressed) = state {
-                    session.on_pointer_button(true, serial);
-                } else {
-                    session.on_pointer_button(false, serial);
-                }
+            } if button == 0x110 || button == 0x111 => {
+                // BTN_LEFT and BTN_RIGHT. The right button is only used for the
+                // desktop's context menu.
+                let pressed = matches!(state, WEnum::Value(wl_pointer::ButtonState::Pressed));
+                session.on_pointer_button(pressed, button, serial);
             }
             wl_pointer::Event::Axis { axis, value, .. } => {
                 if matches!(axis, WEnum::Value(wl_pointer::Axis::VerticalScroll)) && value != 0.0 {

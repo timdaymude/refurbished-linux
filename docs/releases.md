@@ -16,8 +16,9 @@ full per-release report.
 | 0.3.0-r7 components | 930,086,912 | `320a42e55ed129fb6741994e8bbeeea47444fa0065bf3c9b915d22728c5fd019` | `v0.3.0-r7` — `refurbished-linux-0.3.0-amd64.iso` | none |
 | 0.3.0-r8 session | 929,038,336 | `38f428fa5497126e8f436a53c069dbf2cfb3e87e125b5cfe92d2af381bf04a10` | `v0.3.0-r8` — `refurbished-linux-0.3.0-r8-amd64.iso` | none |
 | 0.3.0-r9 chromebook | 929,038,336 | `4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e` | `v0.3.0-r9` — `refurbished-linux-0.3.0-r9-amd64.iso` | none (release is the copy) |
-| 0.3.0-r10 Reawakening OS | 933,232,640 | `68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12` | `v0.3.0-r10` — `reawakening-os-0.3.0-r10-amd64.iso` | workspace root |
-| 0.3.0-r11 **(prerelease)** | 1,107,296,256 | `7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59` | `v0.3.0-r11` — `reawakening-os-0.3.0-r11-amd64.iso` | workspace root |
+| 0.3.0-r10 Reawakening OS | 933,232,640 | `68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12` | `v0.3.0-r10` — `reawakening-os-0.3.0-r10-amd64.iso` | none (release is the copy) |
+| 0.3.0-r11 | 1,107,296,256 | `7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59` | `v0.3.0-r11` — `reawakening-os-0.3.0-r11-amd64.iso` | workspace root |
+| 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | workspace root |
 
 ## Naming
 
@@ -31,6 +32,11 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r12**: published as a prerelease with the ISO and its `.sha256` report. The
+  uploaded asset's size (1,158,348,800 bytes) matches the local file; the bytes
+  were not re-downloaded. The local r10 copy was replaced during this build by a
+  mislabelled r12 image and was deleted rather than kept; the published r10
+  asset is the copy, as recorded above.
 - **r11**: published as a prerelease with the ISO and its `.sha256` report. The
   uploaded asset's size (1,107,296,256 bytes) matches the local file; the bytes
   were not re-downloaded.

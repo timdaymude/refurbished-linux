@@ -4,7 +4,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r11) — dark by default, with a bootable ISO that ships
+Version **0.3.0** (release r12) — dark by default, with a bootable ISO that ships
 the Reawakening wallpapers.
 
 Formerly named *Refurbished Linux*: the images up to r9 were published under that
@@ -41,6 +41,28 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
+- `reawakening-os-0.3.0-r12-amd64.iso` builds end to end and is
+  **1,158,348,800 bytes** with SHA256
+  (`9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6`). r12 makes
+  the desktop usable without a full desktop environment: Brave and Files are
+  pinned to the bar (the chips stay when the application is closed, one click
+  starts or focuses it, closing clears only the running state, and no duplicate
+  chip appears); `~/Desktop` is drawn as icons on the wallpaper (double click
+  opens, dragging snaps to a grid that persists in
+  `~/.config/refurb/desktop-layout`, right-click menus rename and move to the
+  freedesktop trash, new files appear within two seconds); Alt+Z toggles
+  offline voice dictation (Vosk small model, `pw-record`, text typed with
+  `wtype`, helper and microphone gone on stop); and a WirePlumber rule sets
+  `node.suspend-on-idle = false` on the built-in analog output so Jellyfin audio
+  is not waiting for a suspended codec. Verified in QEMU from the shipped ISO:
+  pins launch/focus/close with no duplicates, desktop files appear and open,
+  rename and trash work, dragging persists, the right-click menus open, Alt+Z
+  shows Starting…/Listening and the second press removes the pill, helper and
+  recorder, `refurb-dictate type` inserts text into a focused window, the
+  analog sink carries `node.suspend-on-idle = "false"`, 0 zombies, 537 MB idle,
+  `cargo test --release` 35/35, `scripts/check-config.sh` clean. The audio fix
+  itself could not be observed because this QEMU has no working host audio
+  backend. See `docs/round-12.md` and `docs/performance-r12.md`.
 - `reawakening-os-0.3.0-r11-amd64.iso` builds end to end and is
   **1,107,296,256 bytes** with SHA256
   (`7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59`). r11 is

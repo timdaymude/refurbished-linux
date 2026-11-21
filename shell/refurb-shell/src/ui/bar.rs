@@ -1,5 +1,6 @@
 //! The bar: brand (the launcher), taskbar, status and clock.
 
+use crate::apps;
 use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
 use crate::{icons, render, theme};
 
@@ -44,6 +45,55 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
         theme::ink(),
     );
     right -= clock_w + 10.0;
+
+    // Dictation is either running or it is not: show it in the bar, where the
+    // user is already looking, instead of a separate floating window that could
+    // steal the focus from the field the text is going into.
+    if let Some(state) = &cx.st.dictation {
+        let error = state.starts_with("error");
+        let label = match state.as_str() {
+            "starting" => "Starting…".to_string(),
+            "listening" => "Listening".to_string(),
+            other => other
+                .trim_start_matches("error:")
+                .trim_start_matches("error")
+                .trim()
+                .to_string(),
+        };
+        let label = if label.is_empty() {
+            "Dictation".to_string()
+        } else {
+            label
+        };
+        let shown = cx.ellip(&label, theme::T_BAR, MEDIUM, 190.0);
+        let tw = cx.measure(&shown, theme::T_BAR, MEDIUM);
+        let pill_w = tw + 30.0;
+        if right - pill_w > left {
+            let pill = render::rect(right - pill_w, 5.0, pill_w, h - 10.0);
+            render::round(
+                cx.pm,
+                pill,
+                pill.height() / 2.0,
+                if error { theme::clay_soft() } else { theme::accent_soft() },
+            );
+            cx.glyph(
+                icons::Glyph::Mic,
+                render::rect(pill.x() + 8.0, pill.y() + 4.0, 14.0, 14.0),
+                if error { theme::clay() } else { theme::accent_deep() },
+                2.0,
+            );
+            cx.t(
+                pill.x() + 26.0,
+                pill.y(),
+                pill.height(),
+                &shown,
+                theme::T_BAR,
+                MEDIUM,
+                if error { theme::clay() } else { theme::accent_deep() },
+            );
+            right = pill.x() - 6.0;
+        }
+    }
 
     // battery
     if let Some((level, charging)) = cx.st.status.battery {
@@ -116,11 +166,78 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     // ---- taskbar ---------------------------------------------------------
     let space = right - left - 6.0;
     if space > 60.0 {
-        let chip_w = 150.0f32.min(space / cx.st.toplevels.len().max(1) as f32 - 4.0);
-        for (i, t) in cx.st.toplevels.iter().enumerate() {
+        // Pinned applications come first, so a window can never push them off
+        // the edge of the bar. They are drawn whether or not they are running;
+        // the accent background and the pip are the running state.
+        let pinned: Vec<(usize, bool)> = cx
+            .st
+            .taskbar
+            .iter()
+            .map(|&index| {
+                let running = cx
+                    .st
+                    .apps
+                    .get(index)
+                    .map(|app| {
+                        cx.st
+                            .toplevels
+                            .iter()
+                            .any(|t| apps::matches_toplevel(app, &t.app_id))
+                    })
+                    .unwrap_or(false);
+                (index, running)
+            })
+            .collect();
+        for (index, running) in pinned {
+            let r = render::rect(left, 4.0, 34.0, h - 8.0);
+            if r.right() > right {
+                break;
+            }
+            if running {
+                render::round(cx.pm, r, theme::RADIUS_SM, theme::accent_soft());
+            } else if cx.hot(r) {
+                render::round(cx.pm, r, theme::RADIUS_SM, theme::line_soft());
+            }
+            if let Some(app) = cx.st.apps.get(index) {
+                cx.glyph(
+                    super::glyph_for(app),
+                    render::rect(r.x() + 9.0, r.y() + 6.0, 16.0, 16.0),
+                    if running { theme::accent_deep() } else { theme::ink() },
+                    1.9,
+                );
+            }
+            if running {
+                render::circle(cx.pm, r.x() + r.width() / 2.0, r.bottom() - 3.0, 2.0, theme::accent());
+            }
+            cx.hit(r, Action::LaunchPinned(index));
+            left = r.right() + 4.0;
+        }
+
+        // Window chips for everything that is not one of those pinned
+        // applications. A second Brave window focuses the same single icon
+        // instead of adding a duplicate, which is what was asked for.
+        let windows: Vec<usize> = cx
+            .st
+            .toplevels
+            .iter()
+            .enumerate()
+            .filter(|(_, toplevel)| {
+                !cx.st.taskbar.iter().any(|&index| {
+                    cx.st
+                        .apps
+                        .get(index)
+                        .map(|app| apps::matches_toplevel(app, &toplevel.app_id))
+                        .unwrap_or(false)
+                })
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let chip_w = 150.0f32.min(space / windows.len().max(1) as f32 - 4.0);
+        for &i in &windows {
             if chip_w < 44.0 {
                 break;
             }
+            let t = &cx.st.toplevels[i];
             let r = render::rect(left, 4.0, chip_w, h - 8.0);
             if r.right() > right {
                 break;

@@ -42,10 +42,11 @@ pub enum Glyph {
     Minus,
     Apps,
     Dot,
+    Mic,
 }
 
 impl Glyph {
-    pub const ALL: [Glyph; 32] = [
+    pub const ALL: [Glyph; 33] = [
         Glyph::Brand,
         Glyph::Grid,
         Glyph::Search,
@@ -78,6 +79,7 @@ impl Glyph {
         Glyph::Cloud,
         Glyph::Chat,
         Glyph::Doc,
+        Glyph::Mic,
     ];
 
     pub fn name(self) -> &'static str {
@@ -114,6 +116,7 @@ impl Glyph {
             Glyph::Minus => "minus",
             Glyph::Apps => "apps",
             Glyph::Dot => "dot",
+            Glyph::Mic => "microphone",
         }
     }
 }
@@ -458,6 +461,29 @@ pub fn draw(pm: &mut Pixmap, g: Glyph, r: tiny_skia::Rect, color: Color, stroke:
         }
         Glyph::Dot => {
             circle(pm, x(12.0), y(12.0), 3.4 * s, color);
+        }
+        Glyph::Mic => {
+            // Capsule, cradle and stand: the shape that says "microphone" in
+            // the taskbar at 14 px without a filled body.
+            round_stroke(pm, sub(8.6, 2.6, 6.8, 11.4), 3.4 * s, color, sw * 0.85);
+            scissors(
+                pm,
+                arc_path(x(12.0), y(10.4), 5.4 * s, 0.0, 180.0),
+                color,
+                sw * 0.85,
+            );
+            scissors(
+                pm,
+                poly(&[(x(12.0), y(15.8)), (x(12.0), y(20.0))], false),
+                color,
+                sw * 0.85,
+            );
+            scissors(
+                pm,
+                poly(&[(x(8.4), y(20.0)), (x(15.6), y(20.0))], false),
+                color,
+                sw * 0.85,
+            );
         }
     }
 }

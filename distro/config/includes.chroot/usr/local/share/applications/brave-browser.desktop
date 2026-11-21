@@ -12,4 +12,7 @@ Categories=Network;WebBrowser;
 MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
 StartupNotify=true
 X-Refurb-Pin=1
+# Pinned to the taskbar as well: the icon is there when Brave is closed, which
+# is what a Windows user reaches for first.
+X-Refurb-Taskbar=1
 X-Refurb-Group=web

@@ -37,6 +37,13 @@ grim
 wob
 brightnessctl
 xdg-desktop-portal-wlr
+# Offline voice dictation (Alt+Z). wtype is the Wayland virtual-keyboard client
+# that types the recognised text into the focused window; Python runs the Vosk
+# engine, which the 0800-dictation hook installs from its wheel and which exits
+# as soon as dictation stops.
+wtype
+python3
+python3-pip
 desktop-file-utils
 shared-mime-info
 xdg-user-dirs

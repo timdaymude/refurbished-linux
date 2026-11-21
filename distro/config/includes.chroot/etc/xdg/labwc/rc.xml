@@ -112,6 +112,15 @@
     <keybind key="W-d">
       <action name="Execute"><command>foot -e sh -c 'refurb-diag; printf "\nPress Enter to close "; read -r _'</command></action>
     </keybind>
+    <!-- Alt+Z starts and stops voice dictation. It is the same key SMD Linux
+         used, and it deliberately leaves Ctrl+Z alone: Undo belongs to the
+         application, dictation belongs to the desktop. The helper types into
+         the focused window through the Wayland virtual-keyboard protocol, so
+         it works in Brave, the terminal and every other application without
+         an X11 tool or root access. -->
+    <keybind key="A-z">
+      <action name="Execute"><command>/usr/lib/refurb/refurb-dictate toggle</command></action>
+    </keybind>
     <!-- The power key. The session holds a low-level handle-power-key inhibitor
          (see /usr/lib/refurb/session-inhibit) so logind leaves the key alone and
          it arrives here instead of switching the machine off at once; the shell

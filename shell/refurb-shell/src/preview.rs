@@ -71,6 +71,28 @@ pub fn seed(app: &mut App) {
         mk("refurb-calculator", "Calculator", "Do quick sums", "galculator", 11),
     ];
     app.st.pinned = crate::apps::pinned(&app.st.apps);
+    // The two taskbar pins stay on the bar whether the applications run or not.
+    app.st.taskbar = vec![0, 1];
+    // A representative desktop, so the wallpaper screenshot also shows the
+    // icons and their labels. These are preview-only items; nothing on disk is
+    // read or written by the preview renderer for them.
+    app.st.desk.icons = [
+        ("Documents", crate::desktop::Kind::Folder, 0, 0),
+        ("Photos", crate::desktop::Kind::Folder, 0, 1),
+        ("Brave", crate::desktop::Kind::App, 0, 2),
+        ("notes.txt", crate::desktop::Kind::File, 0, 3),
+    ]
+    .into_iter()
+    .map(|(name, kind, col, row)| crate::desktop::Icon {
+        name: name.into(),
+        file: name.into(),
+        path: std::path::PathBuf::from("/home/refurb/Desktop").join(name),
+        kind,
+        app: None,
+        col,
+        row,
+    })
+    .collect();
     app.st.toplevels = vec![
         Toplevel {
             handle: 1,
@@ -194,7 +216,9 @@ pub fn seed(app: &mut App) {
 }
 
 fn desktop_with(app: &mut App, w: u32, h: u32, overlays: &[Surface]) -> Pixmap {
-    let mut base = ui::desktop_background(w, h);
+    // Render the real desktop surface, not just the wallpaper: that is the
+    // surface that now also carries the files from ~/Desktop.
+    let (mut base, _) = app.render(Surface::Desktop, w, h);
     let (bar, _) = app.render(Surface::Bar, w, crate::theme::BAR_H as u32);
     paint(&mut base, &bar, 0, 0);
     for surface in overlays {

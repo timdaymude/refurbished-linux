@@ -1,0 +1,42 @@
+#!/bin/sh
+# Alt+Z dictation: the offline speech engine and its English model.
+#
+# Both are fetched here, while the image is being built, so the installed system
+# never needs the network for dictation. Vosk is not packaged in Debian; its
+# wheel is manylinux and needs no compiler. The model is the small English one
+# (about 68 MB on disk), which is the accuracy/latency point that suits a
+# two-core laptop.
+set -e
+
+MODEL_DIR=/usr/share/refurb/vosk/model
+
+if [ ! -d "$MODEL_DIR" ]; then
+    echo "refurb: fetching the English speech model"
+    tmp=$(mktemp -d)
+    curl -fsSL --retry 3 --retry-delay 2 \
+        -o "$tmp/model.zip" \
+        https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+    # Python's zipfile rather than unzip: the image does not need a second
+    # archive tool for one build step, and python3 is already required by the
+    # engine that reads the model.
+    python3 - "$tmp/model.zip" "$tmp" <<'PY'
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PY
+    install -d /usr/share/refurb/vosk
+    mv "$tmp/vosk-model-small-en-us-0.15" "$MODEL_DIR"
+    rm -rf "$tmp"
+fi
+
+if ! python3 -c 'import vosk' >/dev/null 2>&1; then
+    echo "refurb: installing the Vosk speech engine"
+    python3 -m pip install \
+        --break-system-packages \
+        --no-cache-dir \
+        --disable-pip-version-check \
+        vosk
+fi
+
+# Fail the build rather than ship a microphone shortcut that cannot work.
+python3 -c 'import vosk; assert vosk.Model' >/dev/null
+chmod 0755 /usr/lib/refurb/refurb-dictate

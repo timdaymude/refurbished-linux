@@ -1,0 +1,297 @@
+#!/usr/bin/python3
+"""refurb-dictate - offline voice dictation for Reawakening OS.
+
+Alt+Z starts and stops dictation. While it runs, speech is transcribed on this
+machine with Vosk (no network, nothing uploaded) and typed into whichever window
+has the keyboard focus, using the Wayland virtual-keyboard protocol through
+wtype. The program exits when dictation stops, so there is no speech engine,
+model or microphone stream resident between uses.
+
+    refurb-dictate toggle          start, or stop if already running  (Alt+Z)
+    refurb-dictate run             record and transcribe (started by toggle)
+    refurb-dictate transcribe WAV  print what a 16 kHz mono WAV says    (diagnostics)
+    refurb-dictate type TEXT       type into the focused window         (diagnostics)
+    refurb-dictate status          print the current state
+
+State is one line in $XDG_RUNTIME_DIR/refurb-dictate.state, which the shell
+shows in the taskbar. Nothing is recorded to disk: the audio stream is consumed
+as it arrives and discarded.
+"""
+
+import json
+import os
+import select
+import signal
+import subprocess
+import sys
+import time
+import wave
+
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+STATE = os.path.join(RUNTIME, "refurb-dictate.state")
+PIDFILE = os.path.join(RUNTIME, "refurb-dictate.pid")
+LOG = os.path.join(RUNTIME, "refurb-dictate.log")
+MODEL = os.environ.get("REFURB_VOSK_MODEL", "/usr/share/refurb/vosk/model")
+RATE = 16000
+stop = False
+recorder = None
+
+
+def write_state(text):
+    try:
+        with open(STATE + ".new", "w", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+        os.replace(STATE + ".new", STATE)
+    except OSError:
+        pass
+
+
+def clear_state():
+    try:
+        os.unlink(STATE)
+    except OSError:
+        pass
+
+
+def read_pid():
+    try:
+        with open(PIDFILE, encoding="ascii") as handle:
+            return int(handle.read().strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def running(pid):
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    # A recycled pid must not be mistaken for a dictation process.
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as handle:
+            return b"refurb-dictate" in handle.read()
+    except OSError:
+        return False
+
+
+def have(program):
+    for directory in os.environ.get("PATH", "/usr/bin:/bin").split(":"):
+        if directory and os.path.isfile(os.path.join(directory, program)):
+            return True
+    return False
+
+
+def type_text(text):
+    text = text.strip()
+    if not text:
+        return True
+    if not have("wtype"):
+        write_state("error: wtype is not installed")
+        return False
+    try:
+        result = subprocess.run(
+            ["wtype", "--", text],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        write_state("error: could not type into the active window")
+        return False
+    if result.returncode != 0:
+        write_state("error: the active window did not accept the text")
+        return False
+    return True
+
+
+def load_engine():
+    """Import Vosk and load the model. Returns (model, recognizer) or None."""
+    try:
+        from vosk import KaldiRecognizer, Model, SetLogLevel
+    except Exception:
+        write_state("error: the speech engine is not installed")
+        return None
+    SetLogLevel(-1)
+    if not os.path.isdir(MODEL):
+        write_state("error: the speech model is missing")
+        return None
+    try:
+        model = Model(MODEL)
+    except Exception:
+        write_state("error: the speech model could not be loaded")
+        return None
+    return model, KaldiRecognizer(model, RATE)
+
+
+def on_signal(_signum, _frame):
+    global stop
+    stop = True
+    # End the recorder here rather than waiting for the read loop to notice.
+    # A blocked read (a suspended or unavailable microphone) never returns, so
+    # the old handler left the microphone open until the process was killed.
+    rec = recorder
+    if rec is not None and rec.poll() is None:
+        try:
+            rec.terminate()
+        except OSError:
+            pass
+
+
+def run():
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+    write_state("starting")
+    engine = load_engine()
+    if engine is None:
+        _ = read_pid()
+        return 1
+    _model, recognizer = engine
+    if not have("pw-record"):
+        write_state("error: the audio recorder is not installed")
+        return 1
+    global recorder
+    try:
+        recorder = subprocess.Popen(
+            ["pw-record", "--format=s16", "--rate=%d" % RATE, "--channels=1", "-"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            bufsize=0,
+        )
+    except OSError:
+        write_state("error: the microphone could not be opened")
+        return 1
+
+    write_state("listening")
+    heard = False
+    failed = False
+    deadline = time.monotonic() + 6.0
+    try:
+        while not stop:
+            # select() keeps a silent or suspended microphone from parking the
+            # loop in read() forever: no audio for six seconds is a failure the
+            # user can see, not a pill that says "Listening" indefinitely.
+            ready, _, _ = select.select([recorder.stdout], [], [], 0.25)
+            if not ready:
+                if not heard and time.monotonic() > deadline:
+                    failed = True
+                    break
+                continue
+            data = recorder.stdout.read(3200)
+            if not data:
+                failed = not heard
+                break
+            heard = True
+            if recognizer.AcceptWaveform(data):
+                text = json.loads(recognizer.Result()).get("text", "").strip()
+                if text and not type_text(text + " "):
+                    break
+    finally:
+        if recorder.poll() is None:
+            recorder.terminate()
+            try:
+                recorder.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                recorder.kill()
+        clear_state()
+        try:
+            if read_pid() == os.getpid():
+                os.unlink(PIDFILE)
+        except OSError:
+            pass
+
+    if failed and not stop:
+        write_state("error: no microphone is available")
+        return 1
+    final = json.loads(recognizer.FinalResult()).get("text", "").strip()
+    if final:
+        type_text(final)
+    return 0
+
+
+def toggle():
+    pid = read_pid()
+    if running(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        return 0
+    if not os.path.isdir(MODEL):
+        write_state("error: the speech model is missing")
+        return 1
+    write_state("starting")
+    log = open(LOG, "wb")
+    try:
+        child = subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "run"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        log.close()
+    try:
+        with open(PIDFILE, "w", encoding="ascii") as handle:
+            handle.write(str(child.pid))
+    except OSError:
+        pass
+    return 0
+
+
+def transcribe(path):
+    engine = load_engine()
+    if engine is None:
+        return 1
+    _model, recognizer = engine
+    try:
+        source = wave.open(path, "rb")
+    except (OSError, wave.Error) as error:
+        print("cannot read %s: %s" % (path, error), file=sys.stderr)
+        return 1
+    if source.getnchannels() != 1 or source.getframerate() != RATE:
+        print("the file must be 16 kHz mono", file=sys.stderr)
+        return 1
+    while True:
+        data = source.readframes(3200)
+        if not data:
+            break
+        recognizer.AcceptWaveform(data)
+    print(json.loads(recognizer.FinalResult()).get("text", "").strip())
+    return 0
+
+
+def status():
+    text = ""
+    try:
+        with open(STATE, encoding="utf-8") as handle:
+            text = handle.read().strip()
+    except OSError:
+        pass
+    print(text or "idle")
+    return 0
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "status"
+    if command == "toggle":
+        return toggle()
+    if command == "run":
+        return run()
+    if command == "type":
+        return 0 if type_text(" ".join(argv[2:])) else 1
+    if command == "transcribe" and len(argv) > 2:
+        return transcribe(argv[2])
+    if command == "status":
+        return status()
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

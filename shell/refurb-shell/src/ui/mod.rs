@@ -5,6 +5,7 @@
 //! a Wayland surface in a live session and to a PNG in a unit test.
 
 pub mod bar;
+pub mod deskicons;
 pub mod dialog;
 pub mod launcher;
 pub mod quick;
@@ -127,6 +128,26 @@ pub enum Action {
     LauncherChar(char),
     LauncherBackspace,
     Launch(usize),
+    /// A taskbar icon: focus the running window, or start the application.
+    LaunchPinned(usize),
+    /// A click on a desktop icon (selects it, or opens it on a double click).
+    DeskIcon(usize),
+    /// Right-click on a desktop icon.
+    DeskMenu(usize),
+    /// Right-click on an empty part of the desktop.
+    DeskMenuEmpty,
+    DeskMenuClose,
+    DeskMenuShortcuts,
+    DeskShortcut(usize),
+    DeskOpen,
+    DeskRename,
+    DeskDelete,
+    DeskNewFolder,
+    DeskRefresh,
+    DeskRenameChar(char),
+    DeskRenameBackspace,
+    DeskRenameCommit,
+    DeskRenameCancel,
     ActivateToplevel(usize),
     SearchWeb,
     QuickToggle,
@@ -282,6 +303,8 @@ pub struct State {
     pub status: Status,
     pub apps: Vec<DesktopApp>,
     pub pinned: Vec<usize>,
+    /// Applications that stay on the taskbar while they are closed.
+    pub taskbar: Vec<usize>,
     pub web: Vec<usize>,
     pub toplevels: Vec<Toplevel>,
     pub wifi: WifiUi,
@@ -300,6 +323,10 @@ pub struct State {
     pub version: String,
     /// The wallpaper the session is painting; see `crate::wallpaper`.
     pub wallpaper: wallpaper::Choice,
+    /// The files and shortcuts on `~/Desktop` and where they were left.
+    pub desk: crate::desktop::State,
+    /// "starting", "listening" or an error, while Alt+Z dictation is active.
+    pub dictation: Option<String>,
 }
 
 impl Default for State {
@@ -316,6 +343,7 @@ impl Default for State {
             status: Status::default(),
             apps: Vec::new(),
             pinned: Vec::new(),
+            taskbar: Vec::new(),
             web: Vec::new(),
             toplevels: Vec::new(),
             wifi: WifiUi::default(),
@@ -333,6 +361,8 @@ impl Default for State {
             updates_note: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             wallpaper: wallpaper::Choice::default(),
+            desk: crate::desktop::State::default(),
+            dictation: None,
         }
     }
 }
@@ -384,6 +414,7 @@ impl App {
     pub fn reload_apps(&mut self) {
         self.st.apps = apps::scan();
         self.st.pinned = apps::pinned(&self.st.apps);
+        self.st.taskbar = apps::taskbar_pins(&self.st.apps);
         self.st.web = self
             .st
             .apps
@@ -461,8 +492,11 @@ impl App {
                 hover: st.hover,
             };
             match surface {
-                // The wallpaper has no widgets; it is painted by the fill above.
-                Surface::Desktop | Surface::DesktopOn(_) => {}
+                // The wallpaper is painted by the fill above. The primary
+                // screen also carries the desktop icons; a second screen gets
+                // the same wallpaper and no second set of files.
+                Surface::Desktop => deskicons::draw(&mut cx, w as f32, h as f32),
+                Surface::DesktopOn(_) => {}
                 Surface::Bar | Surface::BarOn(_) => bar::draw(&mut cx, w as f32, h as f32),
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
@@ -664,6 +698,27 @@ mod tests {
     }
 
     #[test]
+    fn the_desktop_draws_icons_and_registers_them() {
+        let mut app = App::new();
+        app.st.desk.icons = vec![crate::desktop::Icon {
+            name: "Brave".into(),
+            file: "Brave.desktop".into(),
+            path: std::path::PathBuf::from("/home/x/Desktop/Brave.desktop"),
+            kind: crate::desktop::Kind::App,
+            app: None,
+            col: 0,
+            row: 0,
+        }];
+        let (pm, hits) = app.render(Surface::Desktop, 800, 600);
+        let painted = pm.pixels().iter().filter(|p| p.alpha() > 0).count();
+        assert!(painted > 10_000, "the wallpaper itself should be painted");
+        assert!(
+            hits.iter().any(|(_, action)| matches!(action, Action::DeskIcon(0))),
+            "an icon must be clickable"
+        );
+    }
+
+    #[test]
     fn every_surface_renders_non_empty() {
         let mut app = App::new();
         app.st.apps = vec![
@@ -687,6 +742,7 @@ mod tests {
         app.st.pinned = apps::pinned(&app.st.apps);
         for surface in [
             Surface::Bar,
+            Surface::Desktop,
             Surface::Launcher,
             Surface::Quick,
             Surface::Software,

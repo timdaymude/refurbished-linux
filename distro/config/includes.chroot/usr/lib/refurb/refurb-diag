@@ -172,6 +172,10 @@ run_shell 45-vaapi.sh 'ls -l /dev/dri 2>&1; echo; vainfo 2>&1 | head -40'
 # 160% is PipeWire's software gain; if the ALSA control it feeds is low, the
 # speakers stay quiet however high the slider goes.
 run_shell 38-audio-levels.sh 'wpctl status 2>&1 | head -40; echo; wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>&1; echo; wpctl inspect @DEFAULT_AUDIO_SINK@ 2>&1 | head -30; echo; amixer -c0 contents 2>&1 | head -80'
+# Whether the analog sink is allowed to suspend when idle: this is the r12
+# Jellyfin audio-delay fix, and it is the first thing to check if sound is
+# still late on real hardware.
+run_shell 38b-audio-suspend.sh 'wpctl inspect @DEFAULT_AUDIO_SINK@ 2>&1 | grep -i -E "suspend|state|node.name|media.class"; echo; wireplumber --version 2>&1; echo; cat /etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf 2>&1'
 # Zombie processes: children the shell never waited for used to sit here.
 run_shell 19-resources.sh 'ps -eo stat,pid,ppid,comm --sort=stat | head -40; echo; echo "-- zombies"; ps -eo stat,pid,ppid,comm,args | awk "\$1 ~ /^Z/"'
 
@@ -189,6 +193,9 @@ run_shell 62-shell-journal.sh 'journalctl --user -b --no-pager 2>&1 | tail -200'
 run_shell 63-session-processes.sh 'ps -eo pid,ppid,pcpu,pmem,rss,etime,comm,args --sort=-pcpu | head -30'
 run_shell 64-labwc-config.sh 'for f in /etc/xdg/labwc/rc.xml "$HOME/.config/labwc/rc.xml"; do echo "== $f"; ls -l "$f" 2>&1; sha256sum "$f" 2>&1; done'
 run_shell 65-notifications.sh 'pgrep -a mako; echo; busctl --user status org.freedesktop.Notifications 2>&1 | head -5; echo; ls -l /etc/xdg/mako/config 2>&1'
+# Alt+Z dictation: the engine, the model, the tools it types with, and the last
+# run's log. If dictation fails on hardware, this says which part is missing.
+run_shell 66-dictation.sh 'refurb-dictate status 2>&1; echo; python3 -c "import vosk; print(vosk.__file__)" 2>&1; echo; du -sh /usr/share/refurb/vosk/model 2>&1; echo; command -v wtype pw-record python3 2>&1; echo; cat "${XDG_RUNTIME_DIR:-/tmp}/refurb-dictate.state" 2>&1; echo; tail -n 40 "${XDG_RUNTIME_DIR:-/tmp}/refurb-dictate.log" 2>&1'
 
 say "resources and errors"
 run_shell 70-resources.sh 'free -m; echo; cat /proc/loadavg; echo; cat /proc/pressure/cpu /proc/pressure/io /proc/pressure/memory 2>/dev/null; echo; vmstat 1 3'

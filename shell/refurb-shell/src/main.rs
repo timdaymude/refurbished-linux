@@ -5,6 +5,7 @@
 //! owns no background work of its own.
 
 mod apps;
+mod desktop;
 mod icons;
 mod keys;
 mod pkg;
@@ -28,7 +29,7 @@ USAGE:
   refurb-shell --render-preview DIR
                                    render every screen to PNG files in DIR
   refurb-shell --send COMMAND      tell a running shell what to do
-                                   (launcher, quick, settings, software, lock, quit)
+                                   (launcher, quick, settings, software, lock, power, quit)
   refurb-shell --version
   refurb-shell --help
 

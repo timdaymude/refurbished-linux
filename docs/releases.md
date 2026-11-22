@@ -18,9 +18,9 @@ full per-release report.
 | 0.3.0-r9 chromebook | 929,038,336 | `4c7548668ee635d0e60f8722ff879507a3b7445a0f7468f92e7f470344b7387e` | `v0.3.0-r9` — `refurbished-linux-0.3.0-r9-amd64.iso` | none (release is the copy) |
 | 0.3.0-r10 Reawakening OS | 933,232,640 | `68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12` | `v0.3.0-r10` — `reawakening-os-0.3.0-r10-amd64.iso` | none (release is the copy) |
 | 0.3.0-r11 | 1,107,296,256 | `7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59` | `v0.3.0-r11` — `reawakening-os-0.3.0-r11-amd64.iso` | none (release is the copy) |
-| 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | workspace root |
-| 0.3.0-r13 installer, administrator, Cockpit, amplification **(prerelease)** | 1,176,059,904 | `40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9` | `v0.3.0-r13` — `reawakening-os-0.3.0-r13-amd64.iso` | workspace root |
-| 0.3.0-r14 Calamares installer, Software Center removed **(prerelease)** | 1,205,600,256 | `37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6` | `v0.3.0-r14` — `reawakening-os-0.3.0-r14-amd64.iso` | workspace root |
+| 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | none (release is the copy) |
+| 0.3.0-r13 installer, administrator, Cockpit, amplification **(prerelease)** | 1,176,059,904 | `40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9` | `v0.3.0-r13` — `reawakening-os-0.3.0-r13-amd64.iso` | none (release is the copy) |
+| 0.3.0-r14 Calamares installer, Software Center removed **(prerelease)** | 1,205,600,256 | `37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6` | `v0.3.0-r14` — `reawakening-os-0.3.0-r14-amd64.iso` | none (release is the copy) |
 
 ## Naming
 

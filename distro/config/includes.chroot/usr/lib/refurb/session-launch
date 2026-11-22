@@ -40,4 +40,11 @@ start_audio() {
 }
 
 start_audio
+
+# One-shot mixer setup: with the software mixer enabled by the WirePlumber
+# rule, the codec's speaker/PCM controls must sit at 0 dB so the gain above
+# 100% is not compensating for an attenuation below it. Returns immediately
+# when there is no sound card, so a machine without audio still logs in.
+[ -x /usr/lib/refurb/refurb-audio ] && /usr/lib/refurb/refurb-audio init >/dev/null 2>&1 || true
+
 exec labwc

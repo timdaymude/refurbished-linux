@@ -4,8 +4,8 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r12) — dark by default, with a bootable ISO that ships
-the Reawakening wallpapers.
+Version **0.3.0** (release r13) — dark by default, with a bootable, installable
+ISO that ships the Reawakening wallpapers.
 
 Formerly named *Refurbished Linux*: the images up to r9 were published under that
 name, and the repository, internal program names (`refurb-shell`,
@@ -41,6 +41,35 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
+- `reawakening-os-0.3.0-r13-amd64.iso` builds end to end and is
+  **1,176,059,904 bytes** with SHA256
+  (`40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9`). r13 is
+  the first installable image. `refurb-install` runs from the live desktop or a
+  terminal, lists every disk with its size, model and whether it is removable,
+  refuses the disk the live medium is running from, and writes nothing until
+  the user types `erase <disk>`. It installs a UEFI (ESP + ext4) or BIOS (BIOS
+  boot + ext4) system, creates the chosen account with sudo, optionally sets a
+  root password and otherwise leaves root locked, carries the live session's
+  desktop and saved Wi-Fi settings into the new home, installs GRUB on the
+  target only (and always writes the `/EFI/BOOT` fallback, so a disk boots even
+  with an empty firmware variable store or when a USB install is moved), removes
+  itself and the live passwordless-sudo rule from the installed system, and can
+  reboot into it. The live medium also
+  gained usable administration (its already-passwordless autologin account can
+  now sudo), a Cockpit remote switch that takes effect (the loopback drop-in
+  used to sort after the remote one and always win), HTTPS URLs and
+  `refurb-cockpit ip`, and real amplification above 100%: WirePlumber now uses
+  the software mixer for ALSA cards (`api.alsa.soft-mixer = true`) while the
+  codec stays at 0 dB, and `refurb-audio init` normalises the speaker controls
+  once per session. Verified in QEMU: a BIOS install to a blank disk, boot of
+  that disk with no ISO attached, sudo for the created account, root locked,
+  Cockpit HTTPS login from the host through the forwarded port, 160% software
+  gain with the hardware mixer unchanged at 0 dB, mute on/off, and file
+  persistence across a reboot. Also run: a full UEFI install and boot under
+  OVMF (including a boot with an empty variable store), an install to an
+  emulated USB disk whose marked internal disk stayed byte-identical and which
+  then booted alone, and the live `refurb-cockpit on/off` switch from the
+  host's side of the forwarded port. See `docs/round-13.md`.
 - `reawakening-os-0.3.0-r12-amd64.iso` builds end to end and is
   **1,158,348,800 bytes** with SHA256
   (`9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6`). r12 makes
@@ -174,9 +203,19 @@ icons, its own font, its own interaction model — running on top of the tiny
 - **The media keys and `Super` combinations themselves.** QEMU's PS/2 keyboard
   never delivers `XF86Audio*`/`XF86MonBrightness*` keycodes. What is verified is
   the command each binding runs.
-- **Audio through real speakers**, **physical keyboard layouts**, **Bluetooth
-  devices**, and **Cockpit's UI**.
-- **Installation to disk.** The ISO is live-only; there is no installer.
+- **Audio through real speakers or headphones**, and therefore the Chromebook's
+  actual loudness. What was verified in the emulated machine is the mechanism:
+  the software mixer is enabled on the ALSA card, the codec's own controls sit
+  at 0 dB, 160% is applied above that, and mute works. Whether that is loud
+  enough on the Acer's codec, and whether 160% distorts, needs the hardware.
+- **The browser interface of Cockpit and its web terminal.** The HTTPS endpoint,
+  the login page, PAM authentication with the installed account and the
+  forwarded port were verified with `curl` from the host; no browser was driven
+  through the UI.
+- **Installation on physical hardware.** The installer was exercised against
+  virtual disks (BIOS, UEFI and an external USB target). Real firmware
+  partitioning, real USB enumeration and an existing Windows installation are
+  not reproduced here.
 - **A second, simultaneously active screen.** QEMU gives a second GPU no usable
   mode (`Display output is not active.`), so the per-screen bar and wallpaper
   path could not be observed with two live outputs; the single-screen layout and
@@ -201,7 +240,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 ### The ISO (this is the product)
 
-    ./scripts/mkiso.sh all          # no root needed, ~40 min, -> reawakening-os-0.3.0-r10-amd64.iso
+    RELEASE=r13 ./scripts/mkiso.sh all   # no root needed, -> reawakening-os-0.3.0-r13-amd64.iso
     ./scripts/mkiso.sh squashfs && ./scripts/mkiso.sh iso   # rebuild from a staged .build/rootfs
 
 On a Debian/Ubuntu host with root, the same image comes from
@@ -234,13 +273,19 @@ workarounds, requirements and external downloads.
   wallpaper daemon (the shell decodes the shipped PNGs itself, with the pure-Rust
   `png` crate, and paints every screen cover-fit at its own size), no
   notification daemon, no tray.
-- **Privilege**: two shell scripts (`refurb-apt`, `refurb-update`) are the only
-  things the session user may run as root, and they validate their arguments.
-  The software manager is not a daemon: it is a window that runs `apt-cache`
-  when you type.
+- **Privilege**: an installed system administers through `sudo` with the
+  account's own password; the shell's software window still goes through the
+  two validating helpers (`refurb-apt`, `refurb-update`). The live medium's
+  account is passwordless by design (it autologins), so the live image grants
+  it passwordless sudo to make the installer and Cockpit usable; the installer
+  deletes that rule from the target. The software manager is not a daemon: it
+  is a window that runs `apt-cache` when you type.
 - **Updates**: no checker. A once-a-day, short-lived metadata refresh keeps
   “check for updates” instant; installing is always a deliberate action.
-- **Cockpit**: installed, socket-activated, bound to `127.0.0.1:9090` only.
+- **Cockpit**: installed and socket-activated. The live medium is loopback-only
+  until `refurb-cockpit on`; the installer enables network access on the
+  installed system unless the user declines. HTTPS with a self-signed
+  certificate, PAM login with the account password.
 
 ## Philosophy
 

@@ -1,0 +1,117 @@
+#!/bin/sh
+# refurb-audio - make the built-in speakers use their full range.
+#
+# The Chromebook report was "150-160% on the bar, but the speakers stay quiet".
+# Two separate things cause that, and both are addressed here:
+#
+# 1. With the hardware mixer in charge (PipeWire's default), a sink volume
+#    above 100% is clamped by the codec: the bar moves, the level does not.
+#    The WirePlumber rule in /etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf
+#    turns on the software mixer for ALSA cards, so 100-160% is real gain
+#    applied by PipeWire, while the hardware mixer stays at 0 dB.
+#
+# 2. A codec that comes up with Speaker/PCM/Master at a low level attenuates
+#    everything before PipeWire sees it. With the software mixer those controls
+#    are supposed to be left alone at 100%; this script makes that true instead
+#    of assuming it, once per session, without a daemon.
+#
+# Headphone and headset controls are deliberately not touched: their level is
+# whatever the user sets on the sink, so plugging headphones in cannot suddenly
+# produce full-scale output. Mute and the volume keys keep working because they
+# still go through WirePlumber.
+#
+#   refurb-audio init     one-shot setup at session start
+#   refurb-audio status   what the sink and the codec actually report
+set -u
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SINK=@DEFAULT_AUDIO_SINK@
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+wait_for_sink() {
+    i=0
+    while [ "$i" -lt 50 ]; do
+        wpctl inspect "$SINK" >/dev/null 2>&1 && return 0
+        i=$((i + 1))
+        sleep 0.1
+    done
+    return 1
+}
+
+# Only controls that attenuate the speaker path before PipeWire. Headphone,
+# Headset and Mic are intentionally absent.
+PLAYBACK_CONTROLS="Master PCM Speaker Bass_Speaker Speaker+LO"
+
+normalize_mixer() {
+    have amixer || return 0
+    for carddir in /proc/asound/card[0-9]*; do
+        [ -d "$carddir" ] || continue
+        num=${carddir##*card}
+        for ctl in $PLAYBACK_CONTROLS; do
+            name=$(printf '%s' "$ctl" | tr '_' ' ')
+            amixer -c "$num" sset "$name" 100% unmute >/dev/null 2>&1 || true
+        done
+    done
+}
+
+init() {
+    if ! have wpctl; then
+        echo "refurb-audio: wpctl is missing; audio is not running" >&2
+        return 1
+    fi
+    # A missing sink at login is normal for a moment (the sound card probes
+    # after the compositor starts). Do not block the desktop for long.
+    wait_for_sink || return 0
+    normalize_mixer
+    return 0
+}
+
+status() {
+    if ! have wpctl; then
+        echo "refurb-audio: wpctl is missing" >&2
+        return 1
+    fi
+    if ! wpctl inspect "$SINK" >/dev/null 2>&1; then
+        echo "refurb-audio: no default audio sink (no sound card?)"
+        return 1
+    fi
+    echo "Default sink"
+    wpctl inspect "$SINK" 2>/dev/null |
+        grep -E 'node.name|node.description|audio.channels|api.alsa.soft-mixer|node.suspend-on-idle' |
+        sed 's/^ */  /'
+    echo ""
+    echo "Volume"
+    wpctl get-volume "$SINK" 2>/dev/null | sed 's/^/  /'
+    echo ""
+    echo "Hardware mixer"
+    if have amixer; then
+        for carddir in /proc/asound/card[0-9]*; do
+            [ -d "$carddir" ] || continue
+            num=${carddir##*card}
+            echo "  card $num:"
+            for ctl in $PLAYBACK_CONTROLS; do
+                name=$(printf '%s' "$ctl" | tr '_' ' ')
+                line=$(amixer -c "$num" sget "$name" 2>/dev/null |
+                    awk '/Limits: Playback/ {print; exit}')
+                [ -n "$line" ] && printf '    %-14s %s\n' "$name" "$line"
+            done
+        done
+    else
+        echo "  amixer is missing"
+    fi
+    echo ""
+    echo "If the sink volume is above 1.00 and this reports api.alsa.soft-mixer:"
+    echo "true, the extra range is real software gain."
+}
+
+case ${1:-status} in
+init) init ;;
+status) status ;;
+*)
+    echo "usage: refurb-audio [init|status]" >&2
+    exit 2
+    ;;
+esac

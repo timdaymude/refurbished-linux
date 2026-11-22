@@ -7,8 +7,10 @@ OS. It is ordered by how much it could hurt.
 
 - **The ISO exists and boots** (`refurbished-linux-0.2.0-amd64.iso`, 773 MiB,
   BIOS + UEFI). It reaches a login prompt on the console with Cockpit listening.
-- **No installer.** The image is live-only: there is no “install to disk” step
-  yet, so requirement “install and reboot into the installed system” is not met.
+- **The early images had no installer.** Up to r12 the ISO was live-only. From
+  r13 `refurb-install` installs to a disk and the installed system boots without
+  the live medium; installing on physical hardware is still unverified (see
+  Round 13 below).
 - **The graphical session is unverified.** In QEMU the guest screen never left
   the boot loader frame, and the session unit's journal could not be read back
   because the live guest's console login requires a password. The Wayland client
@@ -66,9 +68,11 @@ OS. It is ordered by how much it could hurt.
 - **Updates are whole-system upgrades** through `apt-get upgrade`. There is no
   per-package selection in the GUI, and no automatic reboot handling beyond the
   hint that appears when a kernel update lands.
-- **No Calamares installer.** The ISO uses Debian's installer in live mode: it is
-  small and reliable, but it looks like Debian's installer, not like this
-  desktop. A themed installer is the highest-value next piece of work.
+- **The installer is a terminal program, not Calamares.** It has the steps and
+  the safeguards but not a graphical wizard. It wipes a whole disk: no
+  resizing, no dual-boot install alongside Windows, no LUKS, no LVM and no swap
+  partition (zram is the swap). `docs/installer-design.md` still describes the
+  GUI that was not built.
 - **`sudo` rule without a password** for the two package helpers. On a machine
   that boots straight into a session, a password prompt would be theatre; the
   helpers validate their arguments and cannot be used to run anything else.
@@ -112,8 +116,48 @@ OS. It is ordered by how much it could hurt.
   only Google's internal atkbd, and `refurb-keys` reports what a key press
   produced, so the first session with the machine will say whether the mapping
   fires.
-- **`iproute2` is not installed**, so `refurb-diag` cannot print `ss` output; use
-  `lsof`/`/proc/net/tcp` or install it, if that is ever needed.
+- **`iproute2` was missing up to r12**, so `refurb-diag` could not print `ss`
+  output and `refurb-cockpit` could not name an address. r13 installs it; the
+  script still falls back to `hostname -I` on an older image.
+
+## Round 13 additions
+
+- **The installer is verified against virtual disks, not firmware.** Two full
+  installs (BIOS and UEFI) and an install to an emulated USB disk were run in
+  QEMU; the installed disks booted with no ISO attached. Real USB enumeration,
+  a machine whose internal disk already boots Windows, and firmware that
+  ignores the removable `/EFI/BOOT/BOOTX64.EFI` path are hardware tests.
+- **The installed system autologins the account on tty1.** That is the same
+  startup path the live image uses and the reason the desktop comes up without
+  a display manager. The account has a password, the lock screen uses it, and
+  `sudo` requires it; choosing a root password is optional and off by default.
+- **The live account has passwordless sudo.** It already autologins without a
+  password, so this does not widen physical access; it is what makes the
+  installer, Cockpit and the diagnostics usable. The installer deletes the rule
+  from the installed system. Nothing is exposed over the network by it: Cockpit
+  still asks for a password and stays off the network until switched on.
+- **The installer carries live Wi-Fi profiles and desktop settings, not user
+  files.** `~/.config/refurb`, `~/.config/reawakening`, `~/.config/labwc` and
+  `/etc/NetworkManager/system-connections` are copied. Documents and downloads
+  created during the live session are not; copy them to the target yourself
+  before rebooting.
+- **Audio loudness is not verified.** The QEMU codec lets the mechanism be
+  checked (software mixer on, hardware at 0 dB, 160% applied, mute works) but
+  not heard. Whether the Acer's speakers are loud enough at 100%, whether 160%
+  distorts, and headphone level all need the machine. The codec may expose a
+  different control name than the three `refurb-audio` normalises; `refurb-audio
+  status` and `refurb-diag` show what it actually has.
+- **Jellyfin's own volume is separate from the sink.** The fix makes the system
+  volume real; if Jellyfin Media Player's in-app volume is low, or the server
+  transcodes 5.1 to stereo at a lower gain, the player still needs its own
+  slider. Playback against a real server was not tested.
+- **Cockpit's UI and web terminal were not driven in a browser.** HTTPS, the
+  login page, PAM authentication (Basic auth from the host through a forwarded
+  port) and the local page all returned the expected status codes. The
+  JavaScript application, its terminal and its administrative actions are not
+  exercised.
+- **The installer's password minimum is 8 characters** and a username must be
+  lower-case. There is no strength meter and no dictionary check.
 
 ## Round 12 additions
 

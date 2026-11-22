@@ -12,7 +12,14 @@
 #   refurb-cockpit            show the state and what to do
 #   refurb-cockpit on|off     allow or refuse access from the local network
 #   refurb-cockpit password   set this account's password (Cockpit login)
+#   refurb-cockpit ip         print the addresses other computers can use
 #   refurb-cockpit open       open the local Cockpit page in the browser
+#
+# The shipped socket drop-in is 10-refurb-loopback.conf; this script writes
+# 50-refurb-remote.conf, which systemd reads after it. The previous reverse
+# order meant `on` was silently undone by the loopback file, which is why the
+# page stayed unreachable from another computer. Cockpit speaks HTTPS, so every
+# address printed here is https://.
 set -u
 
 PANEL=/usr/lib/refurb
@@ -27,6 +34,10 @@ addresses() {
     if have ip; then
         ip -o -4 addr show scope global 2>/dev/null |
             awk '{print $2 " " $4}' | cut -d/ -f1
+    elif have hostname; then
+        # An image built before iproute2 was added still has hostname(1).
+        hostname -I 2>/dev/null |
+            awk '{for (i = 1; i <= NF; i++) print "network " $i}'
     fi
 }
 
@@ -61,8 +72,9 @@ show_status() {
     if remote_enabled; then
         say "  Remote access: ENABLED on this network. Authorised users can open"
         addresses | while read -r _ addr; do
-            say "    http://$addr:9090"
+            say "    https://$addr:9090"
         done
+        say "  (Cockpit uses a self-signed certificate, so the browser warns once.)"
         say "  Only reachable from this network; do not forward port 9090 from a router."
         say "  Turn it off with: refurb-cockpit off"
     else
@@ -72,16 +84,29 @@ show_status() {
         say "    refurb-cockpit on"
     fi
     say ""
-    say "  Local page: http://$LOOPBACK:9090"
+    say "  Local page: https://$LOOPBACK:9090"
+}
+
+show_ip() {
+    if ! addresses | grep -q .; then
+        say "No network address yet: connect to Wi-Fi or Ethernet first."
+        return 1
+    fi
+    addresses | while read -r iface addr; do
+        say "$iface  https://$addr:9090"
+    done
 }
 
 case ${1:-status} in
 on | enable)
     # The socket is a system unit, so this is an administrative action: sudo asks
     # for the account's password in this terminal, exactly like any other.
+    # Running `sudo refurb-cockpit on` must work too; before, the root branch
+    # fell out of the case and did nothing at all.
     if [ "$(id -u)" -ne 0 ]; then
         exec sudo "$0" _on
     fi
+    exec "$0" _on
     ;;
 _on)
     target_user=${SUDO_USER:-$(id -un)}
@@ -98,19 +123,17 @@ CONF
     systemctl restart cockpit.socket
     say "Remote administration enabled. From another computer on this network:"
     addresses | while read -r _ addr; do
-        say "  http://$addr:9090"
+        say "  https://$addr:9090"
     done
-    say "Log in as $target_user. Port 9090 must not be forwarded from a router."
+    say "Log in as $target_user with its password. Port 9090 must not be forwarded"
+    say "from a router. The browser will warn about Cockpit's self-signed certificate."
     show_status
     ;;
 off | disable)
     if [ "$(id -u)" -ne 0 ]; then
         exec sudo "$0" _off
     fi
-    rm -f "$DROPIN"
-    systemctl daemon-reload
-    systemctl restart cockpit.socket
-    say "Remote administration disabled: Cockpit listens on $LOOPBACK only."
+    exec "$0" _off
     ;;
 _off)
     rm -f "$DROPIN"
@@ -121,14 +144,23 @@ _off)
     ;;
 password | passwd)
     say "Cockpit logs in with this account's password. Type a new one when asked."
-    exec passwd
+    # On the live medium the account has no password, so `passwd` would ask for
+    # a current one that does not exist. Setting it through sudo avoids that and
+    # is the same operation on an installed system.
+    if [ "$(id -u)" -ne 0 ]; then
+        exec sudo passwd "$(id -un)"
+    fi
+    exec passwd "${SUDO_USER:-$(id -un)}"
+    ;;
+ip | address | addresses)
+    show_ip
     ;;
 open)
-    exec brave-browser --new-window "http://$LOOPBACK:9090"
+    exec brave-browser --new-window "https://$LOOPBACK:9090"
     ;;
 status) show_status ;;
 *)
-    say "usage: refurb-cockpit [status|on|off|password|open]" >&2
+    say "usage: refurb-cockpit [status|on|off|password|ip|open]" >&2
     exit 2
     ;;
 esac

@@ -37,6 +37,14 @@ wireplumber
 libspa-0.2-bluetooth
 wireless-regdb
 ca-certificates
+# `ip` and `ss`: refurb-cockpit prints the addresses another computer can use
+# and refurb-diag reports the interface state. NetworkManager does not pull
+# iproute2 in with --no-install-recommends, so it has to be named.
+iproute2
+# Real-time scheduling for PipeWire. Without rtkit every audio operation logs
+# RTKit errors and runs at normal priority; on the 2 GB target machine that is
+# audible as dropouts when the CPU is busy. D-Bus activated, no idle process.
+rtkit
 curl
 apt
 dpkg
@@ -48,3 +56,19 @@ nano
 less
 btop
 initramfs-tools
+# The disk installer (refurb-install). These are the tools it runs: unpack the
+# live squashfs, partition and format the target, and put GRUB on it. The
+# installed system keeps them, so `update-grub` and a later grub-install work
+# without installing anything first. The *-bin packages are used instead of the
+# grub-pc/grub-efi meta packages because their postinst asks for a device and
+# cannot run during a rootless image build.
+squashfs-tools
+dosfstools
+e2fsprogs
+fdisk
+parted
+grub-common
+grub2-common
+grub-pc-bin
+grub-efi-amd64-bin
+os-prober

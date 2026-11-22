@@ -1,0 +1,608 @@
+#!/bin/sh
+# refurb-install - install Reawakening OS from the live medium onto a disk.
+#
+#   sudo refurb-install                     # ask for everything
+#   sudo refurb-install /dev/sda            # preselect the target, still confirm
+#   sudo refurb-install --uefi /dev/sda     # force the firmware mode
+#   sudo refurb-install --dry-run           # show the disks and do nothing
+#
+# This is deliberately a terminal program: it runs in foot from the launcher,
+# needs no toolkit, and every destructive step is preceded by a typed
+# confirmation. The layout is the one in docs/installer-design.md:
+#
+#   UEFI   GPT: 512 MB FAT32 ESP + ext4 root
+#   BIOS   GPT: 2 MB BIOS boot + ext4 root
+#
+# Safety rules enforced here, not just documented:
+#   * refuse to run unless this is the live medium;
+#   * never touch a disk that backs the live medium;
+#   * only the selected disk is partitioned and only its own ESP is written;
+#   * an external target gets GRUB's removable path, so the internal ESP and
+#     the firmware boot order of the machine are left alone;
+#   * nothing is written before the user types the confirmation word.
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+MNT=/mnt/refurb-install
+LOG="${TMPDIR:-/tmp}/refurb-install.log"
+TARGET=
+MODE=
+DRY_RUN=0
+SQUASH=
+
+say() { printf '%s\n' "$*"; }
+step() { printf '\n== %s\n' "$*"; }
+warn() { printf '\nWARNING: %s\n' "$*" >&2; }
+die() { printf '\nrefurb-install: %s\n' "$*" >&2; exit 1; }
+
+# Everything the user needs to keep if something fails. The password is never
+# written here; only step names and command output are logged.
+: >"$LOG"
+log() { printf '%s\n' "$*" >>"$LOG"; }
+
+cleanup() {
+    set +e
+    for m in "$MNT/boot/efi" "$MNT/dev/pts" "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT"; do
+        mountpoint -q "$m" 2>/dev/null && umount "$m" 2>/dev/null
+    done
+}
+trap cleanup EXIT INT TERM HUP
+
+usage() {
+    cat <<'EOF'
+usage: refurb-install [--dry-run] [--uefi|--bios] [/dev/TARGET]
+
+  --dry-run    list the disks and exit; nothing is changed
+  --uefi       install the UEFI bootloader (default on a UEFI machine)
+  --bios       install the legacy BIOS bootloader
+EOF
+}
+
+for arg in "$@"; do
+    case $arg in
+    --dry-run) DRY_RUN=1 ;;
+    --uefi) MODE=uefi ;;
+    --bios) MODE=bios ;;
+    -h | --help) usage; exit 0 ;;
+    /dev/*) TARGET=$arg ;;
+    *) usage >&2; exit 2 ;;
+    esac
+done
+
+# ------------------------------------------------------------------ checks ---
+if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 || die "run this as root"
+    exec sudo "$0" "$@"
+fi
+
+for cmd in unsquashfs sfdisk mkfs.vfat mkfs.ext4 blkid lsblk findmnt; do
+    command -v "$cmd" >/dev/null 2>&1 ||
+        die "$cmd is missing from the live medium; this installer cannot run"
+done
+
+# The one absolute prerequisite: this must be the live system, because the new
+# root filesystem is the squashfs the running system booted from, not a copy of
+# the running (tmpfs) root.
+for d in /run/live/medium /lib/live/mount/medium /run/live; do
+    if [ -f "$d/live/filesystem.squashfs" ]; then
+        SQUASH="$d/live/filesystem.squashfs"
+        LIVE_DIR=$d
+        break
+    fi
+    if [ -f "$d/filesystem.squashfs" ]; then
+        SQUASH="$d/filesystem.squashfs"
+        LIVE_DIR=$d
+        break
+    fi
+done
+[ -n "$SQUASH" ] ||
+    die "this is not the live medium (no filesystem.squashfs found under /run/live).
+Install Reawakening OS by booting the ISO or USB, then run the installer from there."
+
+if [ ! -e /sys/firmware/efi ] && [ "$MODE" != uefi ]; then
+    MODE=${MODE:-bios}
+fi
+MODE=${MODE:-uefi}
+
+# The account that is logged in on the live desktop; its desktop preferences
+# and saved Wi-Fi connections are carried into the installed system.
+LIVE_USER=${SUDO_USER:-}
+if [ -z "$LIVE_USER" ] || [ "$LIVE_USER" = root ]; then
+    LIVE_USER=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 60000 {print $1; exit}')
+fi
+[ -n "$LIVE_USER" ] || LIVE_USER=refurb
+
+live_disk() {
+    src=$(findmnt -no SOURCE "$LIVE_DIR" 2>/dev/null || true)
+    [ -n "$src" ] || return 0
+    parent=$(lsblk -no PKNAME "$src" 2>/dev/null | head -1 || true)
+    if [ -n "$parent" ]; then
+        printf '/dev/%s\n' "$parent"
+    else
+        printf '%s\n' "$src"
+    fi
+}
+LIVE_DISK=$(live_disk)
+
+# ------------------------------------------------------------------- disks ---
+disks() {
+    for d in /sys/block/*; do
+        name=${d##*/}
+        case $name in
+        loop* | sr* | zram* | ram* | dm-* | md*) continue ;;
+        esac
+        [ -r "$d/size" ] || continue
+        [ "$(cat "$d/size" 2>/dev/null || echo 0)" -gt 0 ] || continue
+        printf '%s\n' "$name"
+    done
+}
+
+disk_size() { lsblk -dno SIZE "/dev/$1" 2>/dev/null | tr -d ' '; }
+disk_model() {
+    m=$(cat "/sys/block/$1/device/model" 2>/dev/null || true)
+    [ -n "$m" ] || m=$(cat "/sys/block/$1/device/name" 2>/dev/null || true)
+    printf '%s\n' "${m:-unknown}"
+}
+disk_removable() { cat "/sys/block/$1/removable" 2>/dev/null || echo 0; }
+
+show_disks() {
+    say "Available disks:"
+    say ""
+    printf '  %-12s %-9s %-11s %s\n' DEVICE SIZE TYPE MODEL
+    for name in $(disks); do
+        dev=/dev/$name
+        if [ -n "$LIVE_DISK" ] && [ "$dev" = "$LIVE_DISK" ]; then
+            kind="live medium"
+        elif [ "$(disk_removable "$name")" = 1 ]; then
+            kind="removable/USB"
+        else
+            kind="internal"
+        fi
+        printf '  %-12s %-9s %-11s %s\n' "$dev" "$(disk_size "$name")" "$kind" "$(disk_model "$name")"
+    done
+    say ""
+}
+
+show_parts() {
+    say "Current contents of $TARGET:"
+    say ""
+    lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT "$TARGET" 2>/dev/null || true
+    say ""
+}
+
+if [ "$DRY_RUN" = 1 ]; then
+    show_disks
+    [ -n "$TARGET" ] && show_parts
+    exit 0
+fi
+
+# ----------------------------------------------------------------- target ---
+step "Choose the installation disk"
+show_disks
+
+if [ -z "$TARGET" ]; then
+    say "Type the device to install onto (for example /dev/sda), or press"
+    say "Ctrl+C to leave everything untouched."
+    printf '> '
+    IFS= read -r answer || die "no disk was chosen; nothing was changed"
+    TARGET=$answer
+fi
+
+case $TARGET in
+/dev/*) ;;
+*) die "the target must be a device such as /dev/sda" ;;
+esac
+[ -b "$TARGET" ] || die "$TARGET is not a block device"
+name=${TARGET##*/}
+[ -d "/sys/block/$name" ] || die "$TARGET is a partition, not a whole disk"
+
+if [ -n "$LIVE_DISK" ] && [ "$TARGET" = "$LIVE_DISK" ]; then
+    die "$TARGET is the disk this live medium is running from.
+Choose another disk (installing over the running live medium is impossible)."
+fi
+
+mounted=$(lsblk -nlo MOUNTPOINT "$TARGET" 2>/dev/null | grep -v '^$' || true)
+[ -z "$mounted" ] || die "$TARGET has mounted partitions:
+$mounted
+Close them first; nothing was changed."
+
+# Capacity sanity: the squashfs alone needs about 1.2 GB, and a usable system
+# needs room for updates and files.
+sectors=$(cat "/sys/block/$name/size" 2>/dev/null || echo 0)
+bytes=$((sectors * 512))
+[ "$bytes" -ge $((4 * 1024 * 1024 * 1024)) ] ||
+    die "$TARGET is smaller than 4 GB; Reawakening OS needs more space than that"
+
+REMOVABLE=$(disk_removable "$name")
+MODE_LABEL="UEFI"
+[ "$MODE" = bios ] && MODE_LABEL="legacy BIOS"
+say ""
+say "Target:   $TARGET  ($(disk_size "$name"), $(disk_model "$name"))"
+say "Firmware: $MODE_LABEL"
+if [ "$REMOVABLE" = 1 ]; then
+    say "This is a removable/USB disk. Only this disk and its own EFI system"
+    say "partition will be written; the internal disk and its bootloader are not"
+    say "touched."
+else
+    warn "This is an internal disk."
+fi
+
+# ---------------------------------------------------------------- warning ---
+step "Everything on $TARGET will be erased"
+show_parts
+warn "All partitions, files and operating systems on $TARGET will be destroyed."
+warn "There is no undo. This installer does not resize or preserve anything."
+say ""
+say "Type exactly:  erase $name"
+say "Anything else cancels the installation and changes nothing."
+printf '> '
+IFS= read -r answer || die "cancelled; nothing was changed"
+[ "$answer" = "erase $name" ] || {
+    say "Cancelled. Nothing was changed."
+    exit 0
+}
+
+# ---------------------------------------------------------------- account ---
+step "Account and computer name"
+say "This account is the administrator: it is in the sudo group and can"
+say "install software and manage services. Root itself stays locked unless you"
+say "choose otherwise below."
+say ""
+
+valid_name() {
+    case $1 in
+    '' | *[!a-z0-9_-]*) return 1 ;;
+    [0-9]*) return 1 ;;
+    root | daemon | bin | sys | sync | nobody) return 1 ;;
+    esac
+    [ ${#1} -le 32 ]
+}
+
+USERNAME=
+while [ -z "$USERNAME" ]; do
+    printf 'Username [refurb]: '
+    IFS= read -r answer || die "cancelled; nothing was changed"
+    [ -n "$answer" ] || answer=refurb
+    if valid_name "$answer"; then
+        USERNAME=$answer
+    else
+        say "Use lower-case letters, digits, '-' or '_', starting with a letter."
+    fi
+done
+
+printf 'Full name [Reawakening OS user]: '
+IFS= read -r FULLNAME || die "cancelled; nothing was changed"
+[ -n "$FULLNAME" ] || FULLNAME="Reawakening OS user"
+
+printf 'Computer name [reawakening]: '
+IFS= read -r HOSTNAME || die "cancelled; nothing was changed"
+[ -n "$HOSTNAME" ] || HOSTNAME=reawakening
+case $HOSTNAME in
+*[!a-zA-Z0-9.-]*) die "a computer name may only contain letters, digits, '-' and '.'" ;;
+esac
+
+# Hidden input on a terminal; plain input when the answers are piped (the
+# virtual-machine test drives this over the serial console).
+read_secret() {
+    if [ -t 0 ]; then
+        stty -echo
+        printf '%s' "$1"
+        IFS= read -r secret || {
+            stty echo
+            die "cancelled; nothing was changed"
+        }
+        stty echo
+        printf '\n'
+    else
+        printf '%s' "$1" >&2
+        IFS= read -r secret || die "cancelled; nothing was changed"
+    fi
+}
+
+while :; do
+    read_secret "Password for $USERNAME: "
+    first=$secret
+    read_secret "Repeat password: "
+    second=$secret
+    if [ ${#first} -lt 8 ]; then
+        say "Use at least 8 characters."
+        continue
+    fi
+    [ "$first" = "$second" ] || {
+        say "The passwords do not match. Try again."
+        continue
+    }
+    break
+done
+PASSWORD=$first
+unset first second secret
+
+ROOT_PASSWORD=
+ROOT_SET=no
+printf 'Set a separate root password? [y/N]: '
+IFS= read -r answer || answer=n
+case $answer in
+y | Y | yes | YES)
+    while :; do
+        read_secret "Root password: "
+        first=$secret
+        read_secret "Repeat root password: "
+        second=$secret
+        if [ ${#first} -lt 8 ]; then
+            say "Use at least 8 characters."
+            continue
+        fi
+        [ "$first" = "$second" ] || {
+            say "The passwords do not match. Try again."
+            continue
+        }
+        ROOT_PASSWORD=$first
+        ROOT_SET=yes
+        break
+    done
+    unset first second secret
+    ;;
+*)
+    say "Root stays locked. $USERNAME can use sudo with its own password."
+    ;;
+esac
+
+COCKPIT_REMOTE=yes
+printf 'Allow Cockpit web administration from other computers on this network? [Y/n]: '
+IFS= read -r answer || answer=y
+case $answer in
+n | N | no | NO) COCKPIT_REMOTE=no ;;
+esac
+
+# --------------------------------------------------------------- partition ---
+step "Partitioning $TARGET"
+log "target=$TARGET mode=$MODE removable=$REMOVABLE user=$USERNAME"
+wipefs -a "$TARGET" >>"$LOG" 2>&1 || true
+sync
+
+case $MODE in
+uefi)
+    sfdisk --wipe always --wipe-partitions always "$TARGET" >>"$LOG" 2>&1 <<'EOF'
+label: gpt
+name=esp, size=512M, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+name=root, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+EOF
+    ;;
+bios)
+    sfdisk --wipe always --wipe-partitions always "$TARGET" >>"$LOG" 2>&1 <<'EOF'
+label: gpt
+name=bios, size=2M, type=21686148-6449-6E6F-744E-656564454649
+name=root, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+EOF
+    ;;
+esac
+
+partprobe "$TARGET" 2>/dev/null || true
+udevadm settle 2>/dev/null || sleep 1
+
+case $TARGET in
+*nvme* | *mmcblk* | *loop*) P1="${TARGET}p1" P2="${TARGET}p2" ;;
+*) P1="${TARGET}1" P2="${TARGET}2" ;;
+esac
+[ -b "$P1" ] && [ -b "$P2" ] || die "the new partitions did not appear; nothing was formatted"
+
+step "Formatting"
+# The ESP exists only in UEFI mode. In BIOS mode the first partition is the
+# unformatted BIOS-boot area grub-install writes its core image to.
+if [ "$MODE" = uefi ]; then
+    # FAT labels are limited to 11 characters; a longer one makes mkfs.vfat
+    # exit without formatting anything (which is how the first R13 test found
+    # this line).
+    mkfs.vfat -F 32 -n REAWAKENING "$P1" >>"$LOG" 2>&1 ||
+        die "could not format the EFI system partition $P1; see $LOG"
+fi
+mkfs.ext4 -q -F -L REAWAKENING_ROOT "$P2" >>"$LOG" 2>&1 ||
+    die "could not format the root partition $P2; see $LOG"
+
+mkdir -p "$MNT"
+mount "$P2" "$MNT" || die "could not mount the new root filesystem"
+if [ "$MODE" = uefi ]; then
+    mkdir -p "$MNT/boot/efi"
+    mount "$P1" "$MNT/boot/efi" || die "could not mount the EFI system partition"
+fi
+
+step "Copying the live system"
+say "This is the slow part (a few minutes); the screen stays on this step."
+unsquashfs -f -d "$MNT" "$SQUASH" >/dev/null 2>&1 ||
+    die "could not unpack the live filesystem; the target disk was left as-is"
+log "unsquashfs ok"
+
+# ---------------------------------------------------------------- chroot -----
+step "Configuring the installed system"
+ROOT_UUID=$(blkid -s UUID -o value "$P2")
+ESP_UUID=
+[ "$MODE" = uefi ] && ESP_UUID=$(blkid -s UUID -o value "$P1")
+
+cat >"$MNT/etc/fstab" <<EOF
+# Written by refurb-install. zram provides swap; there is no swap partition.
+UUID=$ROOT_UUID / ext4 errors=remount-ro 0 1
+EOF
+if [ "$MODE" = uefi ]; then
+    cat >>"$MNT/etc/fstab" <<EOF
+UUID=$ESP_UUID /boot/efi vfat umask=0077 0 1
+EOF
+fi
+
+printf '%s\n' "$HOSTNAME" >"$MNT/etc/hostname"
+cat >"$MNT/etc/hosts" <<EOF
+127.0.0.1 localhost
+127.0.1.1 $HOSTNAME
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+EOF
+
+mount --bind /dev "$MNT/dev"
+mount --bind /dev/pts "$MNT/dev/pts" 2>/dev/null || true
+mount -t proc proc "$MNT/proc"
+mount -t sysfs sys "$MNT/sys"
+cp /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null || true
+
+# The live medium's packages must not follow the system onto the disk. Purging
+# is best-effort because it needs the network; the files that make live-boot
+# run are removed unconditionally afterwards, and the installed GRUB entry has
+# no boot=live argument in the first place.
+chroot "$MNT" /bin/sh -c '
+    export DEBIAN_FRONTEND=noninteractive LC_ALL=C
+    apt-get -y purge live-boot live-config live-config-systemd live-boot-initramfs-tools >/dev/null 2>&1 || true
+    rm -rf /etc/live /lib/live
+    rm -f /etc/initramfs-tools/hooks/live /etc/initramfs-tools/scripts/live
+' >>"$LOG" 2>&1 || true
+
+# Keyboard, locale and time zone follow the live session.
+for f in /etc/default/keyboard /etc/default/locale /etc/localtime; do
+    [ -e "$f" ] && cp -a "$f" "$MNT$f" 2>/dev/null || true
+done
+
+# The live account. It is removed when the user chose another name; when the
+# name is reused, only its password and comment are replaced.
+if [ "$USERNAME" = "$LIVE_USER" ]; then
+    chroot "$MNT" usermod -c "$FULLNAME" "$USERNAME" >/dev/null 2>&1 || true
+else
+    chroot "$MNT" userdel -r "$LIVE_USER" >/dev/null 2>&1 || true
+    chroot "$MNT" useradd -m -u 1000 -s /bin/bash -c "$FULLNAME" "$USERNAME" ||
+        die "could not create the account $USERNAME"
+fi
+printf '%s:%s\n' "$USERNAME" "$PASSWORD" | chroot "$MNT" chpasswd ||
+    die "could not set the account password"
+chroot "$MNT" usermod -aG video,netdev,audio,input,render,sudo "$USERNAME" >/dev/null 2>&1 || true
+
+if [ -n "$ROOT_PASSWORD" ]; then
+    printf 'root:%s\n' "$ROOT_PASSWORD" | chroot "$MNT" chpasswd ||
+        die "could not set the root password"
+else
+    chroot "$MNT" passwd -l root >/dev/null 2>&1 || true
+fi
+unset PASSWORD ROOT_PASSWORD
+
+# The live medium's passwordless sudo must not survive on the installed system.
+rm -f "$MNT/etc/sudoers.d/50-refurb-live" "$MNT/etc/sudoers.d/refurb-live"
+# The installer belongs to the live medium only.
+rm -f "$MNT/usr/lib/refurb/refurb-install" "$MNT/usr/bin/refurb-install" \
+      "$MNT/usr/share/applications/refurb-install.desktop"
+
+# Carry the live session's desktop and network choices into the new home, so
+# wallpaper, desktop icon positions and saved Wi-Fi survive the installation.
+new_home="$MNT/home/$USERNAME"
+mkdir -p "$new_home/.config"
+if [ -d "/home/$LIVE_USER/.config" ]; then
+    for d in refurb reawakening labwc; do
+        if [ -d "/home/$LIVE_USER/.config/$d" ]; then
+            cp -a "/home/$LIVE_USER/.config/$d" "$new_home/.config/" 2>/dev/null || true
+        fi
+    done
+fi
+mkdir -p "$MNT/etc/NetworkManager/system-connections"
+if [ -d /etc/NetworkManager/system-connections ]; then
+    cp -a /etc/NetworkManager/system-connections/. \
+        "$MNT/etc/NetworkManager/system-connections/" 2>/dev/null || true
+fi
+uid=$(chroot "$MNT" id -u "$USERNAME")
+gid=$(chroot "$MNT" id -g "$USERNAME")
+chown -R "$uid:$gid" "$new_home" 2>/dev/null || true
+chmod 0700 "$new_home" 2>/dev/null || true
+find "$MNT/etc/NetworkManager/system-connections" -type f -exec chmod 0600 {} + 2>/dev/null || true
+rm -f "$MNT/etc/resolv.conf"
+
+# Cockpit: local login through the loopback socket always; remote access when
+# the user asked for it. The installed account has a real password, so PAM
+# authentication works.
+mkdir -p "$MNT/etc/systemd/system/sockets.target.wants"
+ln -sf /usr/lib/systemd/system/cockpit.socket \
+    "$MNT/etc/systemd/system/sockets.target.wants/cockpit.socket" 2>/dev/null || true
+if [ "$COCKPIT_REMOTE" = yes ]; then
+    mkdir -p "$MNT/etc/systemd/system/cockpit.socket.d"
+    cat >"$MNT/etc/systemd/system/cockpit.socket.d/60-refurb-remote.conf" <<'EOF'
+# Written by refurb-install: Cockpit answers on every interface so an
+# authorised browser on the local network can reach it. The account password is
+# still required. Remove this file (or run `refurb-cockpit off`) to go back to
+# 127.0.0.1 only.
+[Socket]
+ListenStream=
+ListenStream=9090
+EOF
+fi
+
+chroot "$MNT" systemd-machine-id-setup >/dev/null 2>&1 || true
+
+# Initramfs: after live-boot is gone, rebuild the one that will actually boot.
+chroot "$MNT" /bin/sh -c 'export PATH=/usr/sbin:/usr/bin:/sbin:/bin; update-initramfs -u -k all' \
+    >>"$LOG" 2>&1 || die "could not build the initramfs for the installed system"
+
+# ---------------------------------------------------------------- bootloader --
+step "Installing the bootloader"
+cat >"$MNT/etc/default/grub" <<'EOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=3
+GRUB_DISTRIBUTOR="Reawakening OS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+GRUB_CMDLINE_LINUX=""
+GRUB_DISABLE_OS_PROBER=false
+EOF
+
+if [ "$MODE" = uefi ]; then
+    # Always write the removable fallback first. It lives on the target's own
+    # ESP as /EFI/BOOT/BOOTX64.EFI, needs no firmware variable, and is the only
+    # path that survives moving a USB install to another computer. The first
+    # UEFI test found that an internal install relying on an NVRAM entry alone
+    # did not boot when the firmware had none.
+    chroot "$MNT" grub-install --target=x86_64-efi \
+        --efi-directory=/boot/efi --bootloader-id=reawakening \
+        --removable --no-nvram >>"$LOG" 2>&1 ||
+        die "grub-install (UEFI, removable path) failed; see $LOG"
+    if [ "$REMOVABLE" != 1 ]; then
+        # Best effort: an internal disk also gets a normal firmware entry, so
+        # the machine boots without opening its boot menu. The fallback above
+        # already makes the disk bootable if this fails.
+        chroot "$MNT" grub-install --target=x86_64-efi \
+            --efi-directory=/boot/efi --bootloader-id=reawakening >>"$LOG" 2>&1 ||
+            warn "could not add a firmware boot entry; the disk boots through the removable path"
+    fi
+else
+    chroot "$MNT" grub-install --target=i386-pc --recheck "$TARGET" >>"$LOG" 2>&1 ||
+        die "grub-install (BIOS) failed; see $LOG"
+fi
+
+chroot "$MNT" update-grub >>"$LOG" 2>&1 ||
+    die "update-grub failed; the disk has the system but no boot menu"
+
+# ------------------------------------------------------------------- finish ---
+sync
+step "Finished"
+say "Reawakening OS is installed."
+say ""
+say "  target:  $TARGET ($MODE_LABEL)"
+say "  account: $USERNAME (administrator, sudo)"
+if [ "$ROOT_SET" = yes ]; then
+    say "  root:    password set (sudo is still the normal way to administer)"
+else
+    say "  root:    locked (use sudo with the $USERNAME password)"
+fi
+say "  Cockpit: $( [ "$COCKPIT_REMOTE" = yes ] && echo 'remote access enabled on this network' || echo 'local only' )"
+say ""
+say "Shut down, remove the live medium, and start the machine from the disk."
+say "The installation log is $LOG."
+say ""
+printf 'Reboot now? [y/N]: '
+IFS= read -r answer || answer=n
+case $answer in
+y | Y | yes | YES)
+    cleanup
+    trap - EXIT INT TERM HUP
+    reboot
+    ;;
+*)
+    say "Reboot when you are ready."
+    if [ -t 0 ]; then
+        printf 'Press Enter to close this window. '
+        IFS= read -r _ || true
+    fi
+    ;;
+esac

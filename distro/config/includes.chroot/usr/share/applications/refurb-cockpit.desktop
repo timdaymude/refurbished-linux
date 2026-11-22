@@ -2,7 +2,7 @@
 Type=Application
 Name=Cockpit
 Comment=Administration and a browser terminal
-Exec=brave-browser --new-window http://127.0.0.1:9090
+Exec=brave-browser --new-window https://127.0.0.1:9090
 Icon=application-x-executable
 Terminal=false
 Categories=System;

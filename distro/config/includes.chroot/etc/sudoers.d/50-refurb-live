@@ -1,0 +1,14 @@
+# Reawakening OS live medium only.
+#
+# The live desktop account has no password by design (0500-session.hook.chroot
+# runs `passwd -d refurb`), so ordinary sudo cannot authenticate at all and the
+# user is left with no way to run the installer, enable Cockpit or use the
+# diagnostics. The live session is already an unauthenticated physical session:
+# tty1 autologins this account without a password. Passwordless sudo therefore
+# does not widen access on the medium; it makes the medium usable.
+#
+# This file is deliberately installed only on the live image. refurb-install
+# deletes it from the installed system, whose account has a real password and
+# uses the normal %sudo rule. Remote Cockpit access still requires a password
+# (set with `refurb-cockpit password`) and stays off until `refurb-cockpit on`.
+refurb ALL=(ALL:ALL) NOPASSWD: ALL

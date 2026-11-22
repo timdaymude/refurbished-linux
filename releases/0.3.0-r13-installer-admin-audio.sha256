@@ -1,0 +1,83 @@
+Reawakening OS 0.3.0-r13 — installer, administrator access, Cockpit, real amplification
+
+file:   reawakening-os-0.3.0-r13-amd64.iso
+size:   1176059904 bytes
+sha256: 40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9
+
+Reawakening OS installs to a disk for the first time.
+
+- refurb-install runs in the live session (launcher entry, `sudo refurb-install`
+  in a terminal, or with a preselected /dev target). It lists every disk with
+  size, model and internal/removable, refuses the disk backing the live medium,
+  prints the target's current partitions, and changes nothing until the user
+  types exactly `erase <disk>`. It then creates a GPT layout (UEFI: 512 MB FAT32
+  ESP + ext4 root; BIOS: 2 MB BIOS boot + ext4 root), unpacks the live squashfs,
+  writes UUID fstab/hostname/hosts, creates the chosen administrator account
+  (username, full name, password typed twice, sudo group), optionally sets a
+  root password and otherwise leaves root locked, removes the live account and
+  the live passwordless-sudo rule, deletes the installer from the target,
+  rebuilds the initramfs, installs GRUB and offers a reboot. Desktop settings,
+  wallpaper choice and saved NetworkManager connections are carried into the
+  new home. A USB target gets GRUB's removable path (/EFI/BOOT on its own ESP,
+  no NVRAM entry), and every UEFI install writes that fallback so a disk boots
+  even when the firmware has no boot variable; an internal UEFI disk also
+  attempts a normal firmware entry. Only the selected disk is touched.
+
+- The live medium is administrable. Its account has no password by design
+  (tty1 autologins it), so r13 grants that account passwordless sudo via
+  /etc/sudoers.d/50-refurb-live, validated with visudo at build time. The
+  installer deletes the file from installed systems, where sudo uses the
+  account's own password. Root is never given a default password.
+
+- Cockpit remote access is repaired. The shipped loopback drop-in was named
+  listen.conf, which sorted after the 50-refurb-remote.conf written by
+  `refurb-cockpit on`, so the socket restarted back onto 127.0.0.1 and the
+  switch did nothing. It is now 10-refurb-loopback.conf; the remote drop-in is
+  read last. URLs printed by the script are https://, `refurb-cockpit ip`
+  prints the address to use, `refurb-cockpit password` works on the
+  passwordless live account (sudo passwd), and iproute2 is installed so ip/ss
+  exist. The installer enables cockpit.socket on the target and, unless
+  declined, allows the local network.
+
+- Audio above 100% is real gain. PipeWire's default hardware mixer cannot go
+  past the codec maximum, so the bar moved while the speaker level did not.
+  WirePlumber now sets api.alsa.soft-mixer = true for ALSA cards and keeps the
+  hardware mixer at 0 dB, with refurb-audio normalising Master/PCM/Speaker once
+  per session (Headphone/Headset untouched). The idle-suspend rule now also
+  matches the SOF/UCM `HiFi__Speaker` sink used by many Chromebooks, not only
+  the HDA analog name. rtkit is installed so PipeWire gets real-time priority
+  instead of logging RTKit errors.
+
+Verified in QEMU (2 GB, 2 cores, software emulation), from this ISO:
+
+- Full BIOS install to a blank 8 GB virtio disk, then boot of that disk with no
+  ISO attached: custom desktop drawn, testuser at uid 1000, live account gone,
+  sudo id -u = 0, root locked, expected fstab/hostname/kernel/initramfs/GRUB,
+  sudoers holding only the two helpers, installer absent from the target.
+- File persistence across a reboot and the restored 160% sink volume.
+- Full UEFI install and boot of the disk under OVMF. The ESP holds both
+  /EFI/BOOT/BOOTX64.EFI and /EFI/reawakening/grubx64.efi, and the disk also
+  boots with a fresh, empty OVMF variable store through the fallback.
+- External-USB install: a marked internal disk (GPT, FAKEWIN vFAT, marker.txt)
+  was byte-identical after installing to a USB-attached disk (first 64 MB
+  SHA256 unchanged, marker readable, partition table unchanged); the USB disk
+  then booted alone with the account, sudo and Cockpit working.
+- Live Cockpit switch: `refurb-cockpit on` listened on *:9090 and the host got
+  200 (/), 401 (/cockpit/login without credentials); `refurb-cockpit off`
+  returned the socket to 127.0.0.1 and the host stopped connecting; the root
+  invocation `sudo refurb-cockpit on` also works now.
+- Cockpit from the host (a different machine): GET / 200, /cockpit/login 401
+  without credentials, HTTP Basic login 200 with the installed account.
+- Audio mechanism: api.alsa.soft-mixer true, node.suspend-on-idle false,
+  Master at [100%] [0.00dB], `wpctl set-volume --limit 1.6 ... 160%` reports
+  1.60 with the hardware mixer unchanged, mute/unmute works.
+- scripts/check-config.sh passes. No shell source changed this round; cargo is
+  not installed in this build session, so the 35 shell tests were not re-run
+  (their last run was on identical shell code).
+
+Not verified: loudness, distortion, headphones, Jellyfin playback and the
+Chromebook's actual codec controls; Cockpit's browser UI and web terminal (the
+HTTPS/PAM layer was verified with curl, not clicked through); installation on
+physical firmware, real USB enumeration and an existing Windows ESP; Wi-Fi
+settings carried through a real install (the copy is implemented; there is no
+radio in the emulated machine).

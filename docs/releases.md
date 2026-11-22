@@ -19,6 +19,7 @@ full per-release report.
 | 0.3.0-r10 Reawakening OS | 933,232,640 | `68e1bece9ab62a13aac8212966908e2556c758ab1afa026e50a01d4e4950ae12` | `v0.3.0-r10` — `reawakening-os-0.3.0-r10-amd64.iso` | none (release is the copy) |
 | 0.3.0-r11 | 1,107,296,256 | `7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59` | `v0.3.0-r11` — `reawakening-os-0.3.0-r11-amd64.iso` | none (release is the copy) |
 | 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | workspace root |
+| 0.3.0-r13 installer, administrator, Cockpit, amplification **(prerelease)** | 1,176,059,904 | `40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9` | `v0.3.0-r13` — `reawakening-os-0.3.0-r13-amd64.iso` | workspace root |
 
 ## Naming
 
@@ -32,6 +33,15 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r13**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified before publishing: a full BIOS install and a full UEFI install to
+  blank virtual disks, both booted without the ISO (the UEFI disk also with an
+  empty firmware variable store); an external-USB install whose marked internal
+  disk stayed byte-identical and which booted alone; sudo, root lock state,
+  Cockpit HTTPS login from the host, file persistence, and the audio
+  soft-mixer/160%/mute mechanism. `scripts/check-config.sh` passes; the shell
+  sources were unchanged, so its 35 tests were not re-run (cargo is not in this
+  build session). See `docs/round-13.md`.
 - **r12**: published as a prerelease with the ISO and its `.sha256` report. The
   uploaded asset's size (1,158,348,800 bytes) matches the local file; the bytes
   were not re-downloaded. The local r10 copy was replaced during this build by a

@@ -56,6 +56,11 @@ for f in common package-lists/refurb-base.list.chroot \
          hooks/normal/0700-input.hook.chroot \
          includes.chroot/etc/udev/hwdb.d/70-refurb-chromebook-keys.hwdb \
          includes.chroot/usr/lib/refurb/refurb-cockpit \
+         includes.chroot/usr/lib/refurb/refurb-install \
+         includes.chroot/usr/lib/refurb/refurb-audio \
+         includes.chroot/usr/share/applications/refurb-install.desktop \
+         includes.chroot/etc/sudoers.d/50-refurb-live \
+         includes.chroot/etc/systemd/system/cockpit.socket.d/10-refurb-loopback.conf \
          includes.chroot/usr/lib/refurb/refurb-dictate \
          includes.chroot/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf \
          hooks/normal/0800-dictation.hook.chroot \
@@ -113,10 +118,59 @@ fi
 
 echo "== the analog sink is kept awake (the Jellyfin audio delay)"
 if grep -q 'suspend-on-idle = false' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf" && \
-   grep -q 'alsa_output.*analog' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf"; then
-    ok "only the analog output opts out of idle suspension"
+   grep -q 'alsa_output.*analog' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf" && \
+   grep -q 'HiFi__Speaker' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf"; then
+    ok "the built-in output (HDA analog and SOF speaker) opts out of idle suspension"
 else
-    err "the analog output still suspends on idle"
+    err "the built-in output still suspends on idle"
+fi
+
+echo "== amplification above 100% is real software gain"
+if grep -q 'api.alsa.soft-mixer = true' "$INC/etc/wireplumber/wireplumber.conf.d/51-refurb-audio.conf" && \
+   grep -q 'refurb-audio init' "$INC/usr/lib/refurb/session-launch" && \
+   [ -x "$INC/usr/lib/refurb/refurb-audio" ]; then
+    ok "software mixer enabled and the codec levels are normalised once per session"
+else
+    err "the mixer setup that makes 100-160% audible is missing"
+fi
+
+echo "== the installer is present and keeps its safety rules"
+if [ -x "$INC/usr/lib/refurb/refurb-install" ] && \
+   grep -q 'erase \$name' "$INC/usr/lib/refurb/refurb-install" && \
+   grep -q 'is the disk this live medium is running from' "$INC/usr/lib/refurb/refurb-install" && \
+   grep -q -- '--removable' "$INC/usr/lib/refurb/refurb-install"; then
+    ok "refurb-install requires a typed confirmation and never writes the live or internal disk"
+else
+    err "the installer or its safety rules are missing"
+fi
+for p in squashfs-tools dosfstools e2fsprogs fdisk grub-common grub2-common \
+         grub-pc-bin grub-efi-amd64-bin; do
+    grep -q "^$p\$" "$DISTRO/config/package-lists/refurb-base.list.chroot" || \
+        err "$p is missing, so the installer cannot finish"
+done
+if grep -q 'rm -f "$MNT/usr/lib/refurb/refurb-install"' "$INC/usr/lib/refurb/refurb-install" && \
+   grep -q '50-refurb-live' "$INC/usr/lib/refurb/refurb-install"; then
+    ok "installed systems do not keep the installer or the live passwordless sudo"
+else
+    err "the installer does not remove its live-only pieces from the target"
+fi
+
+echo "== Cockpit can be reached from another computer"
+if [ -f "$INC/etc/systemd/system/cockpit.socket.d/10-refurb-loopback.conf" ] && \
+   [ "$(ls "$INC/etc/systemd/system/cockpit.socket.d/" | wc -l)" = 1 ] && \
+   grep -q 'ListenStream=127.0.0.1:9090' "$INC/etc/systemd/system/cockpit.socket.d/10-refurb-loopback.conf" && \
+   grep -q '50-refurb-remote.conf' "$INC/usr/lib/refurb/refurb-cockpit" && \
+   grep -q 'https://' "$INC/usr/lib/refurb/refurb-cockpit" && \
+   grep -q 'ip | address' "$INC/usr/lib/refurb/refurb-cockpit"; then
+    ok "loopback is the shipped default and the remote drop-in sorts after it"
+else
+    err "the Cockpit drop-in order or URLs are wrong"
+fi
+if grep -q '^cockpit$' "$DISTRO/config/package-lists/refurb-cockpit.list.chroot" && \
+   grep -q 'cockpit.socket' "$DISTRO/config/hooks/normal/0400-cockpit.hook.chroot"; then
+    ok "Cockpit is installed and socket activated"
+else
+    err "Cockpit is not installed or not enabled"
 fi
 
 echo "== sudoers rule is limited to the two helpers"

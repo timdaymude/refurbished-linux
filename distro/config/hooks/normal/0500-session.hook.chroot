@@ -106,6 +106,13 @@ ln -sf /usr/lib/refurb/refurb-keys /usr/local/bin/refurb-keys
 ln -sf /usr/lib/refurb/refurb-cockpit /usr/local/bin/refurb-cockpit
 
 chmod 0440 /etc/sudoers.d/refurb-helpers
+# The live medium's passwordless rule is a separate file so the installer can
+# delete exactly that and leave the two helper rules in place. visudo validates
+# it here: a typo in a sudoers file breaks sudo for the whole image.
+if [ -f /etc/sudoers.d/50-refurb-live ]; then
+    chmod 0440 /etc/sudoers.d/50-refurb-live
+    visudo -c -f /etc/sudoers.d/50-refurb-live >/dev/null
+fi
 
 # The live medium needs a real human account: the desktop session runs as it,
 # and the session launcher looks for the first uid >= 1000. An installed system

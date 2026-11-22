@@ -4,9 +4,9 @@
 # Calamares runs as root. This wrapper keeps the session's display variables,
 # makes the live medium and the eMMC boot/RPMB areas read-only for the duration
 # of the installer (so they cannot be offered as writable targets), and always
-# restores their flags. If a device cannot be marked read-only, the Calamares
-# job in /usr/lib/calamares/modules/refurb-safety still refuses it before any
-# partition job runs.
+# restores their flags. A device that cannot be marked read-only stays in the
+# list, so Calamares' summary and its install confirmation remain the last gate
+# before anything is written.
 set -eu
 
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

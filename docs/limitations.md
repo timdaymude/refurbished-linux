@@ -7,10 +7,10 @@ OS. It is ordered by how much it could hurt.
 
 - **The ISO exists and boots** (`refurbished-linux-0.2.0-amd64.iso`, 773 MiB,
   BIOS + UEFI). It reaches a login prompt on the console with Cockpit listening.
-- **The early images had no installer.** Up to r12 the ISO was live-only. From
-  r13 `refurb-install` installs to a disk and the installed system boots without
-  the live medium; installing on physical hardware is still unverified (see
-  Round 13 below).
+- **The early images had no installer.** Up to r12 the ISO was live-only. r13
+  added the terminal `refurb-install`; from r14 the desktop entry launches
+  Calamares and the installed system boots without the live medium. Installing
+  on physical hardware is still unverified (see Round 14 below).
 - **The graphical session is unverified.** In QEMU the guest screen never left
   the boot loader frame, and the session unit's journal could not be read back
   because the live guest's console login requires a password. The Wayland client
@@ -68,11 +68,13 @@ OS. It is ordered by how much it could hurt.
 - **Updates are whole-system upgrades** through `apt-get upgrade`. There is no
   per-package selection in the GUI, and no automatic reboot handling beyond the
   hint that appears when a kernel update lands.
-- **The installer is a terminal program, not Calamares.** It has the steps and
-  the safeguards but not a graphical wizard. It wipes a whole disk: no
+- **The installer wipes a whole disk.** Calamares offers erase-disk only: no
   resizing, no dual-boot install alongside Windows, no LUKS, no LVM and no swap
-  partition (zram is the swap). `docs/installer-design.md` still describes the
-  GUI that was not built.
+  partition (zram is the swap). Manual partitioning, LVM and LUKS are hidden in
+  the configuration, so they are absent rather than untested.
+- **Packages are installed with APT or a terminal.** r14 removed the Software
+  Center window, its `Super+S` binding and the `refurb-apt` helper; Settings →
+  Updates still refreshes and installs system updates.
 - **`sudo` rule without a password** for the two package helpers. On a machine
   that boots straight into a session, a password prompt would be theatre; the
   helpers validate their arguments and cannot be used to run anything else.
@@ -158,6 +160,33 @@ OS. It is ordered by how much it could hurt.
   exercised.
 - **The installer's password minimum is 8 characters** and a username must be
   lower-case. There is no strength meter and no dictionary check.
+
+## Round 14 additions
+
+- **The installer is Calamares, and it is verified only against virtual disks.**
+  A BIOS install, a UEFI install (including a boot with an empty variable
+  store), an install to an emulated USB disk, and a cancellation were run in
+  QEMU; the installed disks booted with no ISO attached. Real firmware
+  partitioning, real USB enumeration, an internal disk that already boots
+  Windows, and the eMMC boot areas are Chromebook tests.
+- **A pre-partition safety job does not exist.** Calamares does not publish the
+  selected device until its partition module builds its jobs, so a job placed
+  before it cannot know the target. The live medium and eMMC boot areas are made
+  read-only by the wrapper for the duration of the installer instead, and a
+  device that cannot be marked read-only stays visible — the summary and the
+  confirmation are then the last gate.
+- **The storage-device combo preselects the first disk Calamares enumerates.**
+  With two disks attached, the USB disk (`/dev/sda`) was selected while the
+  internal disk was `/dev/vda`. Nothing is erased from that default: "Erase
+  disk" starts unchecked, Next stays disabled until it is chosen, and the
+  summary and the confirmation dialog name the disk.
+- **The progress slideshow renders white.** The QML slideshow panel paints its
+  default white background instead of following the dark branding; the progress
+  bar, percentage and status line are correct. Cosmetic only, and left in place
+  rather than rebuilding a fully tested ISO.
+- **Installation on the Chromebook is the outstanding test.** Virtual disks
+  exercise the wizard, the partitioning, the bootloader module and the target
+  system, but not the machine's firmware, its eMMC and its USB behaviour.
 
 ## Round 12 additions
 

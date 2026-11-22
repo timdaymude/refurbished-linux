@@ -20,6 +20,7 @@ full per-release report.
 | 0.3.0-r11 | 1,107,296,256 | `7de10aa35bdd678f3053cfcca518822acaf086ae02f839d97af91ebcd641ed59` | `v0.3.0-r11` — `reawakening-os-0.3.0-r11-amd64.iso` | none (release is the copy) |
 | 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | workspace root |
 | 0.3.0-r13 installer, administrator, Cockpit, amplification **(prerelease)** | 1,176,059,904 | `40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9` | `v0.3.0-r13` — `reawakening-os-0.3.0-r13-amd64.iso` | workspace root |
+| 0.3.0-r14 Calamares installer, Software Center removed **(prerelease)** | 1,205,600,256 | `37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6` | `v0.3.0-r14` — `reawakening-os-0.3.0-r14-amd64.iso` | workspace root |
 
 ## Naming
 
@@ -33,6 +34,17 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r14**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified before publishing, from the shipped ISO in QEMU: a full BIOS install
+  and a full UEFI install (the UEFI disk booted with an empty variable store),
+  both booting with no ISO attached; an install to an emulated USB disk whose
+  attached bystander disk stayed byte-identical and which booted alone; a
+  cancelled install that wrote nothing; and on the installed systems login with
+  the account password, sudo, group membership, `apt-get update`, file
+  persistence across a cold boot, Cockpit enabled, the live account absent, and
+  no Software Center entry anywhere. `scripts/check-config.sh` passes. Known
+  cosmetic issue: the progress slideshow panel renders white. Physical-hardware
+  installation remains untested. See `docs/round-14.md`.
 - **r13**: published as a prerelease with the ISO and its `.sha256` report.
   Verified before publishing: a full BIOS install and a full UEFI install to
   blank virtual disks, both booted without the ISO (the UEFI disk also with an

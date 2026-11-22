@@ -1,8 +1,14 @@
 # Installer design (0.4 target)
 
-Status: **design only. No disk operations are implemented yet.** Nothing in
-this document has been run against a real disk; the implementation plan below
-ends with a virtual-machine test before any hardware is touched.
+Status: **superseded by Round 14.** The terminal `refurb-install` designed here
+shipped in r13 and was replaced by Calamares in r14; see
+[round-14.md](round-14.md). It is kept for its history: the safety rules it
+established (live-medium exclusion, whole-disk wipe only, nothing written
+before an explicit confirmation) are the rules Calamares now implements.
+
+Original status: **design only. No disk operations are implemented yet.**
+Nothing in this document has been run against a real disk; the implementation
+plan below ends with a virtual-machine test before any hardware is touched.
 
 ## Why not Calamares
 

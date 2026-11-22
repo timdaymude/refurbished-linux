@@ -4,8 +4,9 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r13) — dark by default, with a bootable, installable
-ISO that ships the Reawakening wallpapers.
+Version **0.3.0** (release r14) — dark by default, with a bootable ISO that
+installs with the Calamares graphical installer and ships the Reawakening
+wallpapers.
 
 Formerly named *Refurbished Linux*: the images up to r9 were published under that
 name, and the repository, internal program names (`refurb-shell`,
@@ -18,11 +19,11 @@ icons, its own font, its own interaction model — running on top of the tiny
 `labwc` compositor.
 
     +--------------------------------------------------------------+
-    |  ◠   Brave        Files  Software  Settings  Cockpit  ...  [] |
+    |  ◠   Brave      Files  Settings  Cockpit  Terminal ...  [] |
     |                                                              |
     |                                                              |
     |            Super + Space  ->  launcher                       |
-    |            Super + S      ->  software                       |
+    |                                                              |
     |            Super + ,      ->  settings                       |
     +--------------------------------------------------------------+
 
@@ -30,7 +31,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 | Path | What it is |
 |---|---|
-| `shell/refurb-shell/` | The desktop shell: a Rust program that draws the bar, launcher, quick settings, software manager and settings windows itself, and takes over the session after `labwc`. |
+| `shell/refurb-shell/` | The desktop shell: a Rust program that draws the bar, launcher, quick settings and settings windows itself, and takes over the session after `labwc`. |
 | `shell/refurb-shell/preview/` | Screenshots rendered by the same drawing code that runs on screen (`--render-preview`). |
 | `assets/wallpapers/` | The two shipped wallpapers: `reawakening-default.png` (Tux in a blue stained-glass window, the default) and `reawakening-moonlight.png` (Tux on a moonlit beach). Installed to `/usr/share/backgrounds/reawakening/` and chosen in Settings → Appearance. |
 | `distro/` | The live-build tree that turns Debian + the shell into an ISO. |
@@ -41,6 +42,28 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
+- `reawakening-os-0.3.0-r14-amd64.iso` builds end to end and is
+  **1,205,600,256 bytes** with SHA256
+  (`37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6`). r14
+  replaces the terminal installer with **Calamares 3.3.14** and retires the
+  custom Software Center. The desktop entry launches Calamares, which walks
+  through Welcome, Location, Keyboard, Partitions, Users, Summary, progress and
+  Finish with the Reawakening branding; the disk is never preselected as a
+  destructive target ("Erase disk" starts unchecked and Next stays disabled),
+  and `prompt-install` asks again before the first write. The live medium and
+  eMMC boot areas are marked read-only by the `refurb-installer` wrapper, a
+  bystander disk is left alone, and the live account and its passwordless sudo
+  rule are removed from the target. The Software window, its `Super+S`
+  binding, its pin and the `refurb-apt` helper are gone; APT and Settings →
+  Updates are unchanged. Verified in QEMU from the shipped ISO: a BIOS install,
+  a UEFI install (booting with an empty variable store), an install to an
+  emulated USB disk whose bystander internal disk stayed byte-identical and
+  which then booted alone, cancellation leaving the disk untouched, and on the
+  installed systems login, sudo, group membership, `apt-get update`, file
+  persistence, Cockpit, the removed live account and the absence of any
+  Software entry. `scripts/check-config.sh` passes. The progress slideshow's
+  white panel is a known cosmetic bug. Physical-hardware installation is still
+  to be tested; see `docs/round-14.md` section 5.7.
 - `reawakening-os-0.3.0-r13-amd64.iso` builds end to end and is
   **1,176,059,904 bytes** with SHA256
   (`40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9`). r13 is
@@ -240,7 +263,7 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 ### The ISO (this is the product)
 
-    RELEASE=r13 ./scripts/mkiso.sh all   # no root needed, -> reawakening-os-0.3.0-r13-amd64.iso
+    RELEASE=r14 ./scripts/mkiso.sh all   # no root needed, -> reawakening-os-0.3.0-r14-amd64.iso
     ./scripts/mkiso.sh squashfs && ./scripts/mkiso.sh iso   # rebuild from a staged .build/rootfs
 
 On a Debian/Ubuntu host with root, the same image comes from
@@ -274,12 +297,12 @@ workarounds, requirements and external downloads.
   `png` crate, and paints every screen cover-fit at its own size), no
   notification daemon, no tray.
 - **Privilege**: an installed system administers through `sudo` with the
-  account's own password; the shell's software window still goes through the
-  two validating helpers (`refurb-apt`, `refurb-update`). The live medium's
-  account is passwordless by design (it autologins), so the live image grants
-  it passwordless sudo to make the installer and Cockpit usable; the installer
-  deletes that rule from the target. The software manager is not a daemon: it
-  is a window that runs `apt-cache` when you type.
+  account's own password; Updates goes through its validating helper
+  (`refurb-update`). The live medium's account is passwordless by design (it
+  autologins), so the live image grants it passwordless sudo to make the
+  installer and Cockpit usable; Calamares deletes that rule from the target.
+  r14 removed the Software Center window together with `refurb-apt`: packages
+  are installed with APT or a terminal, and Settings → Updates remains.
 - **Updates**: no checker. A once-a-day, short-lived metadata refresh keeps
   “check for updates” instant; installing is always a deliberate action.
 - **Cockpit**: installed and socket-activated. The live medium is loopback-only

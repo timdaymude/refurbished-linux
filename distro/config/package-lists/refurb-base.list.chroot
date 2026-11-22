@@ -62,6 +62,10 @@ initramfs-tools
 # without installing anything first. The *-bin packages are used instead of the
 # grub-pc/grub-efi meta packages because their postinst asks for a device and
 # cannot run during a rootless image build.
+# unpackfs runs rsync to copy the live filesystem into the target; it is not
+# a dependency of the calamares package, and without it every install stops
+# with "rsync failed with error code 127".
+rsync
 squashfs-tools
 dosfstools
 e2fsprogs
@@ -72,3 +76,9 @@ grub2-common
 grub-pc-bin
 grub-efi-amd64-bin
 os-prober
+# The graphical installer is Calamares (Debian trixie, 3.3.x) with the
+# Reawakening settings in /etc/calamares. It brings KPMcore and Qt6, which are
+# live-media only: the post-install packages job removes calamares from the
+# installed system again. efibootmgr is used by Calamares' UEFI bootloader step.
+calamares
+efibootmgr

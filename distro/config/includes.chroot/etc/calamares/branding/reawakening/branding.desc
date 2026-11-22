@@ -1,0 +1,35 @@
+# Reawakening OS installer branding.
+---
+componentName: reawakening
+slideshow: "show.qml"
+
+welcomeStyleCalamares: false
+welcomeExpandingLogo: false
+
+windowExpanding: normal
+windowSize: 900px,620px
+windowPlacement: center
+sidebar: widget
+navigation: widget
+
+strings:
+    productName:         "Reawakening OS"
+    shortProductName:    "Reawakening"
+    version:             "0.3.0"
+    shortVersion:        "0.3.0"
+    versionedName:       "Reawakening OS 0.3.0"
+    shortVersionedName:  "Reawakening 0.3.0"
+    bootloaderEntryName: "Reawakening OS"
+    productUrl:          "https://github.com/timdaymude/refurbished-linux"
+    supportUrl:          ""
+    knownIssuesUrl:      ""
+    releaseNotesUrl:     ""
+
+images:
+    productWelcome:      "welcome.png"
+
+style:
+    SidebarBackground:        "#12161B"
+    SidebarText:              "#A7AEBB"
+    SidebarTextCurrent:       "#12161B"
+    SidebarBackgroundCurrent: "#35C2A3"

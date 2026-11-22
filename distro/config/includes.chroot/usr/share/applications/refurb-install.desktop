@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Install Reawakening OS
-Comment=Install this live system onto a disk
-Exec=foot -t "Install Reawakening OS" -e /usr/lib/refurb/refurb-install
+Comment=Install Reawakening OS on this computer
+Exec=refurb-installer
 Icon=drive-harddisk
 Terminal=false
 Categories=System;

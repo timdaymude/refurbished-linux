@@ -2,7 +2,7 @@
 //!
 //! One client process, one event queue. It owns a top bar (layer shell), two
 //! overlays (launcher and quick settings, also layer shell) and up to two
-//! ordinary windows (Software and Settings). Frames are rasterised on the CPU
+//! ordinary windows (Settings). Frames are rasterised on the CPU
 //! into shared memory buffers: no GPU context, no toolkit, no extra processes.
 
 use std::io::{Read, Write};
@@ -33,7 +33,7 @@ use crate::desktop as desk;
 use crate::keys::{Key, Keymap, Modifiers};
 use crate::system;
 use crate::ui::{self, Action, App, Focus, Section, SliderKind, Surface, Tool, WindowKind};
-use crate::{pkg, theme};
+use crate::theme;
 
 const BAR_HEIGHT: u32 = theme::BAR_H as u32;
 
@@ -146,8 +146,6 @@ enum Msg {
     /// a missing passphrase can turn back into a password prompt.
     ConnectSaved(String, Result<(), String>),
     Bluetooth(Vec<system::BtDevice>),
-    Packages(Vec<ui::Pkg>),
-    PackageDone(bool, String),
     Log(String),
     Updates(Result<(u32, u32), String>),
     Displays(Vec<ui::DisplayOutput>),
@@ -193,7 +191,6 @@ pub struct Session {
     pointer_focus: Option<Surface>,
     pointer_pos: (f64, f64),
     drag: Option<(SliderKind, Rect)>,
-    search_due: Option<Instant>,
     last_tick: Instant,
     last_status: Instant,
     /// Surfaces whose contents changed and that still need a frame. Painting is
@@ -319,7 +316,6 @@ pub fn run() -> Result<(), String> {
         pointer_focus: None,
         pointer_pos: (0.0, 0.0),
         drag: None,
-        search_due: None,
         last_tick: now,
         last_status: now,
         dirty: Vec::new(),
@@ -554,7 +550,6 @@ impl Session {
         let xdg = self.wm_base.get_xdg_surface(&wl, &self.qh, id);
         let toplevel = xdg.get_toplevel(&self.qh, id);
         let (title, app_id) = match kind {
-            WindowKind::Software => ("Software", "refurb-software"),
             WindowKind::Settings => ("Settings", "refurb-settings"),
         };
         toplevel.set_title(title.to_string());
@@ -680,7 +675,7 @@ impl Session {
             self.desk_keys = desk_keys;
         }
 
-        for kind in [WindowKind::Software, WindowKind::Settings] {
+        for kind in [WindowKind::Settings] {
             let id = surface_for(kind);
             let wanted = self.app.st.window == Some(kind);
             let present = self.entry_index(id).is_some();
@@ -1314,10 +1309,6 @@ impl Session {
                 self.app.st.quick_open = false;
                 self.app.st.launcher_open = false;
                 match kind {
-                    WindowKind::Software => {
-                        self.app.st.focus = Focus::Software;
-                        self.spawn_package_search();
-                    }
                     WindowKind::Settings => self.spawn_displays(),
                 }
             }
@@ -1344,39 +1335,6 @@ impl Session {
                          (iwgtk, blueman-manager, pavucontrol)"
                     );
                 }
-            }
-            Action::SoftwareChar(c) => {
-                if self.app.st.software.query.chars().count() < 64 {
-                    self.app.st.software.query.push(c);
-                }
-                self.search_due = Some(Instant::now() + Duration::from_millis(320));
-            }
-            Action::SoftwareBackspace => {
-                self.app.st.software.query.pop();
-                self.search_due = Some(Instant::now() + Duration::from_millis(320));
-            }
-            Action::SoftwareSuggest(label) => {
-                self.app.st.software.query = pkg::category_term(&label)
-                    .unwrap_or(&label)
-                    .to_string();
-                self.app.st.focus = Focus::Software;
-                self.spawn_package_search();
-            }
-            Action::SoftwarePick(i) => {
-                if i < self.app.st.software.results.len() {
-                    self.app.st.software.selected = Some(i);
-                }
-            }
-            Action::SoftwareAct => self.spawn_package_action(),
-            Action::SoftwareScroll(delta) => {
-                let count = self.app.st.software.results.len();
-                let step = 3usize;
-                let next = if delta > 0 {
-                    (self.app.st.software.scroll + step).min(count.saturating_sub(1))
-                } else {
-                    self.app.st.software.scroll.saturating_sub(step)
-                };
-                self.app.st.software.scroll = next;
             }
             Action::Section(section) => {
                 self.app.st.settings.section = section;
@@ -1573,51 +1531,6 @@ impl Session {
         });
     }
 
-    fn spawn_package_search(&mut self) {
-        self.app.st.software.searched = true;
-        let query = self.app.st.software.query.clone();
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            let hits = pkg::search(&query, 80);
-            let _ = tx.send(Msg::Packages(hits));
-        });
-    }
-
-    fn spawn_package_action(&mut self) {
-        let Some(index) = self.app.st.software.selected else {
-            return;
-        };
-        let Some(package) = self.app.st.software.results.get(index).cloned() else {
-            return;
-        };
-        if self.app.st.software.busy {
-            return;
-        }
-        let install = !package.installed;
-        self.app.st.software.busy = true;
-        self.app.st.software.log.push(format!(
-            "{} {} …",
-            if install { "Installing" } else { "Removing" },
-            package.name
-        ));
-        let tx = self.tx.clone();
-        let name = package.name.clone();
-        std::thread::spawn(move || {
-            let (line_tx, line_rx) = mpsc::channel();
-            pkg::run_action(install, &name, line_tx);
-            for event in line_rx {
-                match event {
-                    pkg::Event::Line(line) => {
-                        let _ = tx.send(Msg::Log(line));
-                    }
-                    pkg::Event::Done(ok) => {
-                        let _ = tx.send(Msg::PackageDone(ok, name.clone()));
-                    }
-                }
-            }
-        });
-    }
-
     fn spawn_update(&mut self, install: bool) {
         self.app.st.updates_note.clear();
         self.app
@@ -1720,28 +1633,10 @@ impl Session {
                 self.app.st.bt.devices = devices;
                 self.app.st.bt.scanning = false;
             }
-            Msg::Packages(hits) => {
-                self.app.st.software.selected = if hits.is_empty() { None } else { Some(0) };
-                self.app.st.software.results = hits;
-                self.app.st.software.scroll = 0;
-            }
             Msg::Log(line) => {
-                if self.app.st.software.log.len() > 200 {
-                    self.app.st.software.log.remove(0);
-                }
-                self.app.st.software.log.push(line.clone());
                 if self.app.st.updates_note.len() < 60 {
                     self.app.st.updates_note.push(line);
                 }
-            }
-            Msg::PackageDone(ok, name) => {
-                self.app.st.software.busy = false;
-                self.app.st.software.log.push(if ok {
-                    format!("Finished {name}.")
-                } else {
-                    format!("Could not change {name}.")
-                });
-                self.spawn_package_search();
             }
             Msg::Updates(result) => match result {
                 Ok((upgrades, security)) => {
@@ -1871,15 +1766,6 @@ impl Session {
             return;
         }
         match self.app.st.window {
-            Some(WindowKind::Software) => match key {
-                Key::Char(c) => self.dispatch(Action::SoftwareChar(c)),
-                Key::Backspace => self.dispatch(Action::SoftwareBackspace),
-                Key::Down => self.move_package_selection(1),
-                Key::Up => self.move_package_selection(-1),
-                Key::Enter => self.dispatch(Action::SoftwareAct),
-                Key::Escape => self.dispatch(Action::WindowClose(WindowKind::Software)),
-                _ => {}
-            },
             Some(WindowKind::Settings) => {
                 if key == Key::Escape {
                     self.dispatch(Action::WindowClose(WindowKind::Settings));
@@ -1887,17 +1773,6 @@ impl Session {
             }
             None => {}
         }
-    }
-
-    fn move_package_selection(&mut self, delta: i32) {
-        let count = self.app.st.software.results.len();
-        if count == 0 {
-            return;
-        }
-        let current = self.app.st.software.selected.unwrap_or(0) as i32;
-        let next = (current + delta).clamp(0, count as i32 - 1) as usize;
-        self.app.st.software.selected = Some(next);
-        self.redraw_visible();
     }
 
     fn on_pointer_button(&mut self, pressed: bool, button: u32, serial: u32) {
@@ -2099,7 +1974,6 @@ impl Session {
             }
             "quick" => self.dispatch(Action::QuickToggle),
             "settings" => self.dispatch(Action::WindowOpen(WindowKind::Settings)),
-            "software" => self.dispatch(Action::WindowOpen(WindowKind::Software)),
             "lock" => self.dispatch(Action::Lock),
             // The machine's own power key (labwc keybind): the dialog answers
             // this, not logind, so a short press can never lose open work.
@@ -2150,23 +2024,11 @@ impl Session {
             self.last_status = now;
             self.spawn_status_refresh();
         }
-        if let Some(due) = self.search_due {
-            if now >= due {
-                self.search_due = None;
-                if self.app.st.window == Some(WindowKind::Software) {
-                    self.spawn_package_search();
-                }
-            }
-        }
     }
 
     fn poll_timeout(&self) -> c_int {
         let now = Instant::now();
         let mut wait = Duration::from_secs(1);
-        if let Some(due) = self.search_due {
-            let until = due.saturating_duration_since(now);
-            wait = wait.min(until);
-        }
         if !self.dirty.is_empty() {
             // A frame is owed: wake up when the frame interval has elapsed.
             let due = self.last_paint + Duration::from_millis(14);
@@ -2276,7 +2138,6 @@ fn start_control_workers(tx: &Sender<Msg>) -> (Sender<f32>, Sender<f32>) {
 
 fn surface_for(kind: WindowKind) -> Surface {
     match kind {
-        WindowKind::Software => Surface::Software,
         WindowKind::Settings => Surface::Settings,
     }
 }
@@ -2710,7 +2571,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Session {
             }
             wl_pointer::Event::Axis { axis, value, .. } => {
                 if matches!(axis, WEnum::Value(wl_pointer::Axis::VerticalScroll)) && value != 0.0 {
-                    session.dispatch(Action::SoftwareScroll(if value > 0.0 { 1 } else { -1 }));
+                    // Scrolling is not used by the remaining windows.
                 }
             }
             _ => {}

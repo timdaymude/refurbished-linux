@@ -510,19 +510,13 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                 widgets::divider(cx, x, y, width);
                 let by = y + 8.0;
                 let bw = (width - GAP * 2.0) / 3.0;
+                let half = (width - GAP) / 2.0;
                 widgets::button(
                     cx,
-                    render::rect(x, by, bw, BTN_H),
+                    render::rect(x, by, half, BTN_H),
                     "Settings",
                     widgets::Style::Secondary,
                     Action::WindowOpen(WindowKind::Settings),
-                );
-                widgets::button(
-                    cx,
-                    render::rect(x + bw + GAP, by, bw, BTN_H),
-                    "Software",
-                    widgets::Style::Secondary,
-                    Action::WindowOpen(WindowKind::Software),
                 );
                 let updates = if st.status.updates > 0 {
                     format!("Updates ({})", st.status.updates)
@@ -531,7 +525,7 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
                 };
                 widgets::button(
                     cx,
-                    render::rect(x + (bw + GAP) * 2.0, by, bw, BTN_H),
+                    render::rect(x + half + GAP, by, half, BTN_H),
                     &updates,
                     widgets::Style::Secondary,
                     Action::Section(Section::Updates),

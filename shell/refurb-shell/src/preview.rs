@@ -11,7 +11,7 @@ use tiny_skia::{BlendMode, FilterQuality, Pixmap, PixmapPaint, Transform};
 use crate::apps::App as DesktopApp;
 use crate::system::{BtDevice, BtStatus, WifiNetwork, WifiStatus};
 use crate::text::{TextEngine, REGULAR};
-use crate::ui::{self, App, DisplayOutput, Focus, Pkg, Surface, Toplevel, WindowKind};
+use crate::ui::{self, App, DisplayOutput, Focus, Surface, Toplevel, WindowKind};
 use crate::{icons, render, theme};
 
 fn paint(base: &mut Pixmap, top: &Pixmap, x: i32, y: i32) {
@@ -60,15 +60,14 @@ pub fn seed(app: &mut App) {
     app.st.apps = vec![
         mk("brave-browser", "Brave", "Private web browser", "brave-browser %U", 1),
         mk("refurb-files", "Files", "Your documents and drives", "pcmanfm", 2),
-        mk("refurb-software", "Software", "Install and remove applications", "refurb-shell --software", 3),
-        mk("refurb-settings", "Settings", "Display, sound, updates and power", "refurb-shell --settings", 4),
-        mk("refurb-cockpit", "Cockpit", "Web-based system administration", "brave-browser http://127.0.0.1:9090", 5),
-        mk("refurb-terminal", "Terminal", "Command line", "foot", 6),
-        web("m365", "Microsoft 365", "Word, Excel and PowerPoint online", "https://www.office.com", 7),
-        web("outlook", "Outlook", "Mail and calendar", "https://outlook.office.com", 8),
-        web("onedrive", "OneDrive", "Your files in the cloud", "https://onedrive.live.com", 9),
-        web("teams", "Teams", "Meetings and chat", "https://teams.microsoft.com", 10),
-        mk("refurb-calculator", "Calculator", "Do quick sums", "galculator", 11),
+        mk("refurb-settings", "Settings", "Display, sound, updates and power", "refurb-shell --settings", 3),
+        mk("refurb-cockpit", "Cockpit", "Web-based system administration", "brave-browser http://127.0.0.1:9090", 4),
+        mk("refurb-terminal", "Terminal", "Command line", "foot", 5),
+        web("m365", "Microsoft 365", "Word, Excel and PowerPoint online", "https://www.office.com", 6),
+        web("outlook", "Outlook", "Mail and calendar", "https://outlook.office.com", 7),
+        web("onedrive", "OneDrive", "Your files in the cloud", "https://onedrive.live.com", 8),
+        web("teams", "Teams", "Meetings and chat", "https://teams.microsoft.com", 9),
+        mk("refurb-calculator", "Calculator", "Do quick sums", "galculator", 10),
     ];
     app.st.pinned = crate::apps::pinned(&app.st.apps);
     // The two taskbar pins stay on the bar whether the applications run or not.
@@ -162,41 +161,6 @@ pub fn seed(app: &mut App) {
             paired: true,
         },
     ];
-    app.st.software.results = vec![
-        Pkg {
-            name: "firefox-esr".into(),
-            summary: "Mozilla Firefox web browser - Extended Support Release".into(),
-            installed: false,
-        },
-        Pkg {
-            name: "chromium".into(),
-            summary: "Web browser built on the Chromium project".into(),
-            installed: false,
-        },
-        Pkg {
-            name: "galculator".into(),
-            summary: "Scientific calculator with algebraic and RPN modes".into(),
-            installed: true,
-        },
-        Pkg {
-            name: "gnome-calculator".into(),
-            summary: "GNOME desktop calculator".into(),
-            installed: false,
-        },
-        Pkg {
-            name: "libreoffice-writer".into(),
-            summary: "Office productivity suite - word processor".into(),
-            installed: false,
-        },
-        Pkg {
-            name: "mousepad".into(),
-            summary: "Simple text editor for Xfce".into(),
-            installed: false,
-        },
-    ];
-    app.st.software.query = "calc".into();
-    app.st.software.selected = Some(2);
-    app.st.software.searched = true;
     app.st.display.outputs = vec![DisplayOutput {
         name: "eDP-1".into(),
         modes: vec![
@@ -248,7 +212,6 @@ fn window_with(app: &mut App, w: u32, h: u32, kind: WindowKind) -> Pixmap {
     let mut base = desktop_with(app, w, h, &[]);
     let (ww, wh) = (960u32, 620u32);
     let surface = match kind {
-        WindowKind::Software => Surface::Software,
         WindowKind::Settings => Surface::Settings,
     };
     app.st.window = Some(kind);
@@ -335,15 +298,10 @@ pub fn render_all(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 
     app.st.wifi.open = false;
     app.st.quick_open = false;
-    out.push(save(
-        &window_with(&mut app, w, h, WindowKind::Software),
-        dir.join("05-software.png"),
-    )?);
-
     app.st.settings.section = ui::Section::Updates;
     out.push(save(
         &window_with(&mut app, w, h, WindowKind::Settings),
-        dir.join("06-settings-updates.png"),
+        dir.join("05-settings-updates.png"),
     )?);
 
     app.st.settings.section = ui::Section::About;

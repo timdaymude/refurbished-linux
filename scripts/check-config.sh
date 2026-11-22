@@ -98,6 +98,42 @@ want = ["brave-browser.desktop", "refurb-files.desktop"]
 print(f"  {'ok  ' if sorted(entries) == want else 'FAIL'} taskbar pins {sorted(entries)}")
 PY
 
+echo "== the graphical installer is Calamares with Reawakening settings"
+if grep -q '^calamares$' "$DISTRO/config/package-lists/refurb-base.list.chroot" && \
+   grep -q '^branding: reawakening$' "$INC/etc/calamares/settings.conf" && \
+   grep -q '^initialPartitioningChoice: none$' "$INC/etc/calamares/modules/partition.conf" && \
+   [ -s "$INC/etc/calamares/branding/reawakening/branding.desc" ] && \
+   [ -x "$INC/usr/lib/refurb/refurb-installer" ] && \
+   grep -q 'blockdev --setro' "$INC/usr/lib/refurb/refurb-installer" && \
+   grep -q 'installEFIFallback: true' "$INC/etc/calamares/modules/bootloader.conf"; then
+    ok "Calamares has branding, an explicit erase choice, live-disk protection and the UEFI fallback"
+else
+    err "the Calamares configuration or its safety pieces are missing"
+fi
+if [ -x "$INC/usr/lib/refurb/calamares-finalize" ] && \
+   grep -q '50-refurb-live' "$INC/usr/lib/refurb/calamares-finalize" && \
+   grep -q 'cockpit.socket' "$INC/usr/lib/refurb/calamares-finalize" && \
+   grep -q '^username: refurb$' "$INC/etc/calamares/modules/removeuser.conf"; then
+    ok "the installed system loses the live account, its sudo rule and the installer"
+else
+    err "the Calamares finalization does not remove the live-only state"
+fi
+if sh -n "$INC/usr/lib/refurb/calamares-finalize"; then
+    ok "the post-install finalization script parses"
+else
+    err "the post-install finalization script is not valid shell"
+fi
+
+echo "== the withdrawn Software window is gone"
+if [ ! -e "$INC/usr/share/applications/refurb-software.desktop" ] && \
+   [ ! -e "$INC/usr/lib/refurb/refurb-apt" ] && \
+   ! grep -Rqs 'refurb-software\|WindowKind::Software' "$ROOT/shell/refurb-shell/src" && \
+   ! grep -q 'refurb-apt' "$INC/etc/sudoers.d/refurb-helpers"; then
+    ok "no Software launcher, window, helper or passwordless rule remains"
+else
+    err "a Software Center entry point or privilege remains"
+fi
+
 echo "== Alt+Z dictation is wired to a working pipeline"
 if [ -x "$INC/usr/lib/refurb/refurb-dictate" ] && \
    python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' \
@@ -175,8 +211,8 @@ fi
 
 echo "== sudoers rule is limited to the two helpers"
 if [ "$(grep -c 'NOPASSWD' "$INC/etc/sudoers.d/refurb-helpers")" = 1 ] && \
-   grep -q 'refurb-apt' "$INC/etc/sudoers.d/refurb-helpers"; then
-    ok "one NOPASSWD rule, helpers only"
+   grep -q 'refurb-update' "$INC/etc/sudoers.d/refurb-helpers"; then
+    ok "one NOPASSWD rule, the update helper only"
 else
     err "unexpected sudoers content"
 fi

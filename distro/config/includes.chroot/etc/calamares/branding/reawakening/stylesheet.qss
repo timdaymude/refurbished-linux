@@ -1,0 +1,63 @@
+/* Reawakening OS installer: the desktop's dark palette.
+ * Surfaces #12161B / #1C2027 / #262C34, text #ECEEF2, muted #A7AEBB,
+ * accent #35C2A3, destructive #E08B8B.
+ */
+QWidget {
+    background-color: #1C2027;
+    color: #ECEEF2;
+    font-family: "Inter", "Cantarell", sans-serif;
+    font-size: 14px;
+}
+QMainWindow, QDialog { background-color: #1C2027; }
+QLabel { background: transparent; }
+QLabel#welcomeLabel, QLabel#mainTitle {
+    font-size: 26px;
+    font-weight: 600;
+    color: #ECEEF2;
+}
+QLabel#subTitle { color: #A7AEBB; }
+QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {
+    background-color: #12161B;
+    color: #ECEEF2;
+    border: 1px solid #2E3440;
+    border-radius: 8px;
+    padding: 7px 9px;
+    selection-background-color: #35C2A3;
+    selection-color: #12161B;
+}
+QLineEdit:focus, QComboBox:focus { border-color: #35C2A3; }
+QPushButton {
+    background-color: #262C34;
+    color: #ECEEF2;
+    border: 1px solid #2E3440;
+    border-radius: 8px;
+    padding: 8px 18px;
+}
+QPushButton:hover { border-color: #35C2A3; }
+QPushButton:default, QPushButton#nextButton {
+    background-color: #35C2A3;
+    color: #12161B;
+    border-color: #35C2A3;
+    font-weight: 600;
+}
+QPushButton:disabled { color: #5A6270; background-color: #20242B; border-color: #262C34; }
+QCheckBox, QRadioButton { background: transparent; spacing: 8px; }
+QProgressBar {
+    background-color: #12161B;
+    border: 1px solid #2E3440;
+    border-radius: 6px;
+    text-align: center;
+    color: #ECEEF2;
+}
+QProgressBar::chunk { background-color: #35C2A3; border-radius: 5px; }
+QListWidget, QTreeView, QTableView {
+    background-color: #12161B;
+    border: 1px solid #2E3440;
+    border-radius: 8px;
+    alternate-background-color: #20242B;
+}
+QListWidget::item:selected, QTreeView::item:selected { background: #35C2A3; color: #12161B; }
+QScrollBar:vertical { background: #1C2027; width: 10px; }
+QScrollBar::handle:vertical { background: #3A424E; border-radius: 5px; min-height: 24px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+QToolTip { background: #262C34; color: #ECEEF2; border: 1px solid #2E3440; }

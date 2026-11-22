@@ -215,11 +215,11 @@ stage_configure() {
         set -e
         for f in /usr/bin/sudo /usr/bin/su /usr/bin/passwd /usr/bin/chsh \
                  /usr/bin/chfn /usr/bin/newgrp /usr/bin/gpasswd \
-                 /usr/bin/mount /usr/bin/umount /usr/bin/pkexec; do
+                 /usr/bin/mount /usr/bin/umount /usr/bin/pkexec \
+                 /usr/lib/dbus-1.0/dbus-daemon-launch-helper; do
             if [ -e "$f" ]; then chmod 4755 "$f"; fi
         done
         for f in /usr/sbin/unix_chkpwd \
-                 /usr/lib/dbus-1.0/dbus-daemon-launch-helper \
                  /usr/lib/openssh/ssh-keysign; do
             if [ -e "$f" ]; then chmod 2755 "$f"; fi
         done
@@ -277,11 +277,10 @@ stage_squashfs() {
     # which leaves the machine with no way to perform an administrative task.
     for f in usr/bin/sudo usr/bin/su usr/bin/passwd usr/bin/chsh usr/bin/chfn \
              usr/bin/newgrp usr/bin/gpasswd usr/bin/mount usr/bin/umount \
-             usr/bin/pkexec; do
+             usr/bin/pkexec usr/lib/dbus-1.0/dbus-daemon-launch-helper; do
         [ -e "$ROOTFS/$f" ] && chmod 4755 "$ROOTFS/$f"
     done
-    for f in usr/sbin/unix_chkpwd usr/lib/dbus-1.0/dbus-daemon-launch-helper \
-             usr/lib/openssh/ssh-keysign; do
+    for f in usr/sbin/unix_chkpwd usr/lib/openssh/ssh-keysign; do
         [ -e "$ROOTFS/$f" ] && chmod 2755 "$ROOTFS/$f"
     done
 

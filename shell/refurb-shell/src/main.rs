@@ -1,14 +1,13 @@
 //! Reawakening OS shell.
 //!
-//! One process draws the wallpaper, the bar, the launcher, quick settings,
-//! Software and Settings. It is a Wayland client of the labwc compositor and
-//! owns no background work of its own.
+//! One process draws the wallpaper, the bar, the launcher, quick settings and
+//! Settings. It is a Wayland client of the labwc compositor and owns no
+//! background work of its own.
 
 mod apps;
 mod desktop;
 mod icons;
 mod keys;
-mod pkg;
 mod preview;
 mod reaper;
 mod render;
@@ -29,7 +28,7 @@ USAGE:
   refurb-shell --render-preview DIR
                                    render every screen to PNG files in DIR
   refurb-shell --send COMMAND      tell a running shell what to do
-                                   (launcher, quick, settings, software, lock, power, quit)
+                                   (launcher, quick, settings, lock, power, quit)
   refurb-shell --version
   refurb-shell --help
 

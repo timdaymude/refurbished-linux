@@ -18,7 +18,7 @@ runs `../scripts/check-config.sh`, and then `lb config && lb build` here.
 | `usr/bin/refurb-session` | session environment, first-boot welcome page, `exec labwc` |
 | `etc/xdg/labwc/rc.xml` | keybindings, window rules (no server-side decorations on shell windows) |
 | `etc/xdg/labwc/autostart` | starts `refurb-shell` — and nothing else |
-| `usr/lib/refurb/refurb-apt` | the only way the Software window can install or remove packages |
+
 | `usr/lib/refurb/refurb-update` | metadata refresh and upgrade, on request only |
 | `etc/systemd/system/cockpit.socket.d/listen.conf` | Cockpit on `127.0.0.1:9090` only |
 | `etc/brave/policies/managed/refurb.json` | no background mode, no metrics, hardware acceleration on |

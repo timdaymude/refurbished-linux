@@ -1,0 +1,125 @@
+#!/bin/sh
+# Launch the Reawakening OS installer (Calamares) from the live desktop.
+#
+# Calamares runs as root. This wrapper keeps the session's display variables,
+# makes the live medium and the eMMC boot/RPMB areas read-only for the duration
+# of the installer (so they cannot be offered as writable targets), and always
+# restores their flags. If a device cannot be marked read-only, the Calamares
+# job in /usr/lib/calamares/modules/refurb-safety still refuses it before any
+# partition job runs.
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LOG=/run/refurb-installer.log
+SAVED=/run/refurb-installer-readonly
+
+if [ "$(id -u)" -ne 0 ]; then
+    # The live account has passwordless sudo (r13). Keep the graphical session
+    # environment: sudo resets it otherwise. The live desktop is labwc, so its
+    # native Wayland socket is the platform to use; an xcb fallback is kept for
+    # an X11 session, where xhost has already allowed the root user.
+    qt_platform=${QT_QPA_PLATFORM:-}
+    if [ -z "$qt_platform" ]; then
+        if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+            qt_platform=wayland
+        elif [ -n "${DISPLAY:-}" ]; then
+            qt_platform=xcb
+        fi
+    fi
+    exec sudo -n env \
+        DISPLAY="${DISPLAY:-}" \
+        WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+        XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
+        XAUTHORITY="${XAUTHORITY:-}" \
+        QT_QPA_PLATFORM="$qt_platform" \
+        "$0" "$@"
+fi
+
+: >"$LOG"
+: >"$SAVED"
+
+live_disk() {
+    src=""
+    for mp in /run/live/medium /lib/live/mount/medium /run/initramfs/live; do
+        src=$(findmnt -n -o SOURCE "$mp" 2>/dev/null || true)
+        [ -n "$src" ] && break
+    done
+    [ -n "$src" ] || return 0
+    case $src in
+    /dev/loop*)
+        backing=$(losetup -j "$src" 2>/dev/null | cut -d: -f1)
+        [ -n "$backing" ] && src=$backing
+        ;;
+    esac
+    parent=$(lsblk -n -o PKNAME "$src" 2>/dev/null | head -1 || true)
+    if [ -n "$parent" ]; then
+        printf '/dev/%s\n' "$parent"
+    else
+        printf '%s\n' "$src"
+    fi
+}
+
+protect() {
+    dev=$1
+    [ -b "$dev" ] || return 0
+    if [ "$(blockdev --getro "$dev" 2>/dev/null || echo 0)" = 0 ]; then
+        if blockdev --setro "$dev" 2>>"$LOG"; then
+            printf '%s\n' "$dev" >>"$SAVED"
+            printf 'protected (read-only): %s\n' "$dev" >>"$LOG"
+        else
+            printf 'could not set read-only: %s\n' "$dev" >>"$LOG"
+        fi
+    fi
+}
+
+restore() {
+    [ -f "$SAVED" ] || return 0
+    while IFS= read -r dev; do
+        [ -n "$dev" ] || continue
+        blockdev --setrw "$dev" 2>>"$LOG" || true
+        printf 'restored read-write: %s\n' "$dev" >>"$LOG"
+    done <"$SAVED"
+    : >"$SAVED"
+}
+trap restore EXIT INT TERM HUP
+
+LIVE=$(live_disk)
+[ -n "$LIVE" ] && protect "$LIVE"
+for sys in /sys/block/*; do
+    name=${sys##*/}
+    case $name in
+    *boot0 | *boot1 | *rpmb) protect "/dev/$name" ;;
+    esac
+done
+
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${DISPLAY:-}" ]; then
+    printf 'No graphical session found. Run the installer from the live desktop.\n' >&2
+    exit 1
+fi
+if [ "${QT_QPA_PLATFORM:-}" = xcb ] && command -v xhost >/dev/null 2>&1; then
+    xhost +si:localuser:root >>"$LOG" 2>&1 || true
+fi
+
+# Calamares needs a writable /etc/fstab in the live system during its run; the
+# live image has none (the overlay root is not on a disk). A stale one makes the
+# partition page fail to find mount points.
+if [ -f /etc/fstab ]; then
+    mv /etc/fstab /etc/fstab.refurb-installer
+    FSTAB_MOVED=1
+else
+    FSTAB_MOVED=0
+fi
+restore_fstab() {
+    [ "$FSTAB_MOVED" = 1 ] && mv /etc/fstab.refurb-installer /etc/fstab 2>/dev/null || true
+}
+trap 'restore_fstab; restore' EXIT INT TERM HUP
+
+calamares "$@"
+status=$?
+if [ "${QT_QPA_PLATFORM:-}" = xcb ] && command -v xhost >/dev/null 2>&1; then
+    xhost -si:localuser:root >>"$LOG" 2>&1 || true
+fi
+restore_fstab
+restore
+exit $status

@@ -6,5 +6,5 @@ Exec=brave-browser --new-window https://127.0.0.1:9090
 Icon=application-x-executable
 Terminal=false
 Categories=System;
-X-Refurb-Pin=5
+X-Refurb-Pin=4
 X-Refurb-Group=system

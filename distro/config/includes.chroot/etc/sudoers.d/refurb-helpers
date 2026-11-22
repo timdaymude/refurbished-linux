@@ -1,5 +1,4 @@
-# Reawakening OS: the graphical Software window and the update panel are the
-# only things allowed to gain root, and only through these two helpers, which
-# validate their arguments themselves. Nothing else can be run as root without
-# a password.
-%sudo ALL=(root) NOPASSWD: /usr/lib/refurb/refurb-apt, /usr/lib/refurb/refurb-update
+# Reawakening OS: the update panel is the only graphical component allowed to
+# gain root without a password, and only through this helper, which validates
+# its arguments itself. Nothing else can be run as root without a password.
+%sudo ALL=(root) NOPASSWD: /usr/lib/refurb/refurb-update

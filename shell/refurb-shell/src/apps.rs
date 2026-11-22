@@ -389,11 +389,11 @@ mod tests {
         };
         let apps = vec![
             mk("Files", "Browse your documents"),
-            mk("Software", "Install and remove applications"),
+            mk("Settings", "Change appearance and sound"),
             mk("Web browser helper", "Brave integration"),
         ];
-        let hits = search(&apps, "so");
-        assert_eq!(apps[hits[0]].name, "Software");
+        let hits = search(&apps, "se");
+        assert_eq!(apps[hits[0]].name, "Settings");
         assert!(score(&mk("Brave", ""), "brave").unwrap() > score(&mk("Brave", ""), "rav").unwrap());
     }
 }

@@ -95,7 +95,7 @@ fn pinned_grid(cx: &mut Ctx, area: Rect) {
             cx,
             area,
             "No pinned applications",
-            "Open the software manager to install something.",
+            "Use the launcher to start an application.",
         );
         return;
     }
@@ -182,7 +182,7 @@ fn results_list(cx: &mut Ctx, area: Rect) {
             cx,
             area,
             &format!("Nothing installed matches “{}”", st.query),
-            "You can still look for it on the web, or install it from Software.",
+            "Try a different name, or search the web.",
         );
         let btn = render::rect(
             area.x() + area.width() / 2.0 - 90.0,

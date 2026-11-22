@@ -1,0 +1,51 @@
+#!/bin/sh
+# Final steps inside the freshly unpacked Reawakening OS target, run by
+# Calamares' shellprocess job after the bootloader. Everything here is the
+# tested r13 post-install work that Calamares' generic modules do not do:
+# remove live-only privileges, carry the live desktop preferences to the new
+# account, enable Cockpit, and rebuild the initramfs without live-boot.
+set -u
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# This runs chrooted into the target, so / is the installed system.
+LIVE_USER=refurb
+
+# The live medium's passwordless sudo and the installer itself belong to the
+# live session only.
+rm -f /etc/sudoers.d/50-refurb-live /etc/sudoers.d/refurb-live
+rm -f /usr/lib/refurb/refurb-install /usr/bin/refurb-install \
+      /usr/share/applications/refurb-install.desktop
+
+# Remove live-boot leftovers even if the packages job could not purge them.
+rm -rf /etc/live /lib/live
+rm -f /etc/initramfs-tools/hooks/live /etc/initramfs-tools/scripts/live
+
+# Find the account Calamares created (the only uid >= 1000 that is not the
+# live account) and copy the live session's Reawakening settings into it.
+NEW_USER=$(awk -F: -v live="$LIVE_USER" '$3 >= 1000 && $3 < 60000 && $1 != live {print $1; exit}' /etc/passwd)
+if [ -n "$NEW_USER" ] && [ -d "/home/$LIVE_USER" ]; then
+    new_home="/home/$NEW_USER"
+    mkdir -p "$new_home/.config"
+    for d in refurb reawakening labwc; do
+        if [ -d "/home/$LIVE_USER/.config/$d" ]; then
+            cp -a "/home/$LIVE_USER/.config/$d" "$new_home/.config/" 2>/dev/null || true
+        fi
+    done
+    uid=$(id -u "$NEW_USER")
+    gid=$(id -g "$NEW_USER")
+    chown -R "$uid:$gid" "$new_home" 2>/dev/null || true
+    chmod 0700 "$new_home" 2>/dev/null || true
+fi
+
+# Cockpit is installed but socket activation is not enabled by its package.
+ln -sf /usr/lib/systemd/system/cockpit.socket \
+    /etc/systemd/system/sockets.target.wants/cockpit.socket 2>/dev/null || true
+
+# /etc/resolv.conf in the live image is a symlink into the running system.
+rm -f /etc/resolv.conf
+
+# The installed system boots from its own initramfs, without live-boot.
+update-initramfs -u -k all
+
+exit 0

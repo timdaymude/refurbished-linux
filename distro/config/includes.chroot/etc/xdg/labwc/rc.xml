@@ -43,8 +43,7 @@
   </theme>
 
   <windowRules>
-    <!-- The shell draws its own headers for these two windows. -->
-    <windowRule identifier="refurb-software" serverDecoration="no" />
+    <!-- The shell draws its own header for the settings window. -->
     <windowRule identifier="refurb-settings" serverDecoration="no" />
     <!-- Do NOT ask for server decorations for Brave. r11 tried it (the rule is
          one line) and labwc 0.8.3 was killed by the negotiation every time a
@@ -64,9 +63,6 @@
     </keybind>
     <keybind key="W-e">
       <action name="Execute"><command>pcmanfm</command></action>
-    </keybind>
-    <keybind key="W-s">
-      <action name="Execute"><command>refurb-shell --send software</command></action>
     </keybind>
     <keybind key="W-comma">
       <action name="Execute"><command>refurb-shell --send settings</command></action>

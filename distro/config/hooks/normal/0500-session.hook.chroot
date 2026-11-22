@@ -84,7 +84,7 @@ for vt in 2 3 4 5 6; do
 done
 systemctl set-default graphical.target >/dev/null 2>&1 || true
 
-for program in /usr/lib/refurb/refurb-apt /usr/lib/refurb/refurb-update \
+for program in /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/session-start /usr/lib/refurb/shell-supervisor \
                /usr/lib/refurb/session-launch /usr/lib/refurb/refurb-control \
                /usr/lib/refurb/osd-start /usr/lib/refurb/tty1-autologin \

@@ -10,7 +10,6 @@ pub mod dialog;
 pub mod launcher;
 pub mod quick;
 pub mod settings;
-pub mod software;
 pub mod widgets;
 
 use tiny_skia::{Color, Pixmap, Rect};
@@ -35,13 +34,11 @@ pub enum Surface {
     Quick,
     /// The power confirmation: a full-screen modal that holds the keyboard.
     Dialog,
-    Software,
     Settings,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowKind {
-    Software,
     Settings,
 }
 
@@ -92,7 +89,6 @@ impl Section {
 pub enum Focus {
     None,
     Launcher,
-    Software,
     WifiPassword,
 }
 
@@ -180,12 +176,6 @@ pub enum Action {
     WindowClose(WindowKind),
     /// Hand a job to a proven program instead of drawing it here.
     OpenTool(Tool),
-    SoftwareChar(char),
-    SoftwareBackspace,
-    SoftwarePick(usize),
-    SoftwareSuggest(String),
-    SoftwareAct,
-    SoftwareScroll(i32),
     Section(Section),
     UpdateCheck,
     UpdateInstall,
@@ -233,24 +223,6 @@ pub struct BtUi {
     pub open: bool,
     pub devices: Vec<BtDevice>,
     pub scanning: bool,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Pkg {
-    pub name: String,
-    pub summary: String,
-    pub installed: bool,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct SoftwareUi {
-    pub query: String,
-    pub results: Vec<Pkg>,
-    pub selected: Option<usize>,
-    pub busy: bool,
-    pub log: Vec<String>,
-    pub scroll: usize,
-    pub searched: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -309,7 +281,6 @@ pub struct State {
     pub toplevels: Vec<Toplevel>,
     pub wifi: WifiUi,
     pub bt: BtUi,
-    pub software: SoftwareUi,
     pub settings: SettingsUi,
     pub display: DisplayUi,
     pub clock: String,
@@ -348,7 +319,6 @@ impl Default for State {
             toplevels: Vec::new(),
             wifi: WifiUi::default(),
             bt: BtUi::default(),
-            software: SoftwareUi::default(),
             settings: SettingsUi::default(),
             display: DisplayUi::default(),
             clock: "--:--".into(),
@@ -479,7 +449,7 @@ impl App {
             Surface::Desktop | Surface::DesktopOn(_) => paint_desktop_background(&mut pm),
             Surface::Bar | Surface::BarOn(_) => pm.fill(theme::panel()),
             Surface::Launcher | Surface::Quick | Surface::Dialog => pm.fill(Color::TRANSPARENT),
-            Surface::Software | Surface::Settings => pm.fill(theme::card()),
+            Surface::Settings => pm.fill(theme::card()),
         }
 
         let mut hits: Vec<(Rect, Action)> = Vec::new();
@@ -501,7 +471,6 @@ impl App {
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
                 Surface::Dialog => dialog::draw(&mut cx, w as f32, h as f32),
-                Surface::Software => software::draw(&mut cx, w as f32, h as f32),
                 Surface::Settings => settings::draw(&mut cx, w as f32, h as f32),
             }
         }
@@ -571,8 +540,6 @@ pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
         icons::Glyph::Globe
     } else if has("file") || has("folder") {
         icons::Glyph::Folder
-    } else if has("software") || has("install") {
-        icons::Glyph::Download
     } else if has("setting") {
         icons::Glyph::Gear
     } else if has("cockpit") {
@@ -745,7 +712,6 @@ mod tests {
             Surface::Desktop,
             Surface::Launcher,
             Surface::Quick,
-            Surface::Software,
             Surface::Settings,
         ] {
             let (pm, _) = app.render(surface, 1024, 700);

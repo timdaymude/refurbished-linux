@@ -44,7 +44,12 @@ applies to new images only.
   persistence across a cold boot, Cockpit enabled, the live account absent, and
   no Software Center entry anywhere. `scripts/check-config.sh` passes. Known
   cosmetic issue: the progress slideshow panel renders white. Physical-hardware
-  installation remains untested. See `docs/round-14.md`.
+  installation remains untested. See `docs/round-14.md`. The published asset
+  was then downloaded again with `gh release download`: it is 1,205,600,256
+  bytes and hashes to the same SHA256, so the release is a complete backup of
+  the image that was tested. (The repository is private, so an anonymous
+  `curl` of the asset URL answers 404; that is access control, not a missing
+  asset.)
 - **r13**: published as a prerelease with the ISO and its `.sha256` report.
   Verified before publishing: a full BIOS install and a full UEFI install to
   blank virtual disks, both booted without the ISO (the UEFI disk also with an

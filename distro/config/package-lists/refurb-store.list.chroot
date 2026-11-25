@@ -1,0 +1,40 @@
+# Reawakening OS - the graphical application store.
+#
+# DDE Store is Debian's dde-store (1.2.5-2): a Qt 5 / DTK front end that reads
+# its catalogue from AppStream and installs and removes packages through
+# PackageKit. It is a store, not a desktop environment: only the DTK libraries
+# and the Qt 5 platform it needs are installed, never DDE itself.
+#
+# The image ships a locally rebuilt dde-store package (see packaging/dde-store)
+# with the upstream fix for the home page crash on AppStream categories that
+# contain fewer than ten applications. Debian's 1.2.5-2 has "for (int i = 0;
+# i < 10; i++)" over an arbitrarily short list; 1.2.5-2.1 fixed it upstream,
+# but that release is a Qt 6 port that this Qt 5 image cannot use.
+dde-store
+# The Qt 5 Wayland platform plugin. libdtkgui5 depends on the Wayland *client*
+# library but not on the plugin that implements the QPA platform, so without
+# this the store aborts at startup: the exact failure the user hit on the
+# Chromebook ("the Qt Wayland plugin was missing").
+qtwayland5
+# AppStream: the catalogue. appstreamcli builds /var/cache/swcatalog during the
+# image build, and Debian's apt hook rebuilds it after every apt update. The
+# store therefore opens with a catalogue even before any network access.
+appstream
+# PackageKit and its APT backend (libpk_backend_apt.so). This is the service
+# the store uses to install and remove packages. It is D-Bus activated: it does
+# not start at boot and exits after its idle timeout.
+packagekit
+# pkcon, the PackageKit diagnostic. 108 KiB, no daemon of its own, and the
+# answer to "is the install path working at all?" without opening the store.
+packagekit-tools
+# The polkit authentication agent. PackageKit's install and remove actions ask
+# polkitd for the administrator password; without a registered agent the request
+# fails with "No authentication agent found" and nothing can be installed.
+# mate-polkit reuses the GTK 3 stack the image already has (nm-connection-editor)
+# and costs 68 KiB.
+mate-polkit
+# pkexec: runs the Cockpit remote-access helper through that same agent, so
+# Settings → Remote can ask for a password without a terminal.
+pkexec
+# wl-copy: the "Copy" button next to the Cockpit address in Settings → Remote.
+wl-clipboard

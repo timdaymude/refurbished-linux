@@ -45,6 +45,7 @@ pub enum WindowKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     Updates,
+    Remote,
     Display,
     Appearance,
     Sound,
@@ -53,8 +54,9 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 6] = [
+    pub const ALL: [Section; 7] = [
         Section::Updates,
+        Section::Remote,
         Section::Display,
         Section::Appearance,
         Section::Sound,
@@ -65,6 +67,7 @@ impl Section {
     pub fn label(self) -> &'static str {
         match self {
             Section::Updates => "Updates",
+            Section::Remote => "Remote",
             Section::Display => "Display",
             Section::Appearance => "Appearance",
             Section::Sound => "Sound",
@@ -76,6 +79,7 @@ impl Section {
     pub fn glyph(self) -> icons::Glyph {
         match self {
             Section::Updates => icons::Glyph::Refresh,
+            Section::Remote => icons::Glyph::Globe,
             Section::Display => icons::Glyph::Display,
             Section::Appearance => icons::Glyph::Moon,
             Section::Sound => icons::Glyph::Volume,
@@ -179,6 +183,15 @@ pub enum Action {
     Section(Section),
     UpdateCheck,
     UpdateInstall,
+    /// Allow or refuse Cockpit access from the local network (asks for the
+    /// account password through the polkit agent).
+    RemoteToggle,
+    /// Re-read the socket state, the LAN address and the URL.
+    RemoteRefresh,
+    /// Copy one of the addresses in `remote.urls` to the clipboard.
+    RemoteCopy(usize),
+    /// Open this computer's own Cockpit page in Brave.
+    RemoteOpen,
     DisplayMode(usize),
     /// Pick one of the two shipped wallpapers, by index in `wallpaper::Choice::ALL`.
     Wallpaper(usize),
@@ -238,6 +251,23 @@ pub struct DisplayUi {
     pub selected: usize,
 }
 
+/// What the session knows about Cockpit, read from `refurb-cockpit state` when
+/// the panel opens and after every change. The shell and the terminal command
+/// therefore agree on what "enabled" means.
+#[derive(Clone, Debug, Default)]
+pub struct RemoteUi {
+    pub socket_active: bool,
+    /// True when the local network may reach port 9090.
+    pub enabled: bool,
+    /// `https://<address>:9090` for every usable network address.
+    pub urls: Vec<String>,
+    /// The account Cockpit will ask to log in as.
+    pub user: String,
+    /// The result of the last change, or the reason it failed.
+    pub note: Vec<String>,
+    pub busy: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SettingsUi {
     pub section: Section,
@@ -282,6 +312,7 @@ pub struct State {
     pub wifi: WifiUi,
     pub bt: BtUi,
     pub settings: SettingsUi,
+    pub remote: RemoteUi,
     pub display: DisplayUi,
     pub clock: String,
     pub weekday: String,
@@ -320,6 +351,7 @@ impl Default for State {
             wifi: WifiUi::default(),
             bt: BtUi::default(),
             settings: SettingsUi::default(),
+            remote: RemoteUi::default(),
             display: DisplayUi::default(),
             clock: "--:--".into(),
             weekday: String::new(),
@@ -544,6 +576,9 @@ pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
         icons::Glyph::Gear
     } else if has("cockpit") {
         icons::Glyph::Shield
+    } else if has("store") || has("software") {
+        // The application store: dde-store's desktop entry and package name.
+        icons::Glyph::Store
     } else if has("terminal") || has("console") || has("shell") {
         icons::Glyph::Terminal
     } else {

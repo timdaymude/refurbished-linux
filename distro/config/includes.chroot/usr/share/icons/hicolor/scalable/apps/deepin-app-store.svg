@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64"
+     fill="none" stroke="#d7e3dc" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+  <!-- App Store: a shopping bag with a download arrow, in the same 24-unit
+       grid and 1.9-unit stroke as the shell's own icon set. dde-store asks the
+       icon theme for "deepin-app-store" in its title bar, tray entry and about
+       window; Debian's package ships no icon of that name. -->
+  <path d="M4.4 8.1h15.2l-1.2 10.7a1.7 1.7 0 0 1-1.7 1.5H7.3a1.7 1.7 0 0 1-1.7-1.5z"/>
+  <path d="M8.6 8.1V6.3a3.4 3.4 0 0 1 6.8 0v1.8"/>
+  <path d="M12 11.7v4.2"/>
+  <path d="M10.1 14l1.9 1.9 1.9-1.9"/>
+</svg>

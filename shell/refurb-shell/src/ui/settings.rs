@@ -77,6 +77,7 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
 
     match cx.st.settings.section {
         Section::Updates => updates(cx, pane),
+        Section::Remote => remote(cx, pane),
         Section::Display => display(cx, pane),
         Section::Appearance => appearance(cx, pane),
         Section::Sound => sound(cx, pane),
@@ -194,6 +195,145 @@ fn updates(cx: &mut Ctx, pane: Rect) {
             );
         }
     }
+}
+
+/// Cockpit without a terminal: what the service is doing, the address another
+/// computer uses, and one switch that asks for the account password. The URL
+/// is shown as text and can be copied, because typing an IP address on a phone
+/// is exactly the step where remote administration used to fail.
+fn remote(cx: &mut Ctx, pane: Rect) {
+    let st = cx.st;
+    let mut y = heading(
+        cx,
+        pane,
+        "Remote administration",
+        "Cockpit: administration and a terminal in a browser, here or on another computer.",
+    );
+
+    let card = render::rect(pane.x() + 20.0, y, pane.width() - 40.0, 94.0);
+    render::round(cx.pm, card, theme::RADIUS_SM, theme::well());
+    let label_x = card.x() + 14.0;
+    let value_x = card.x() + 186.0;
+    let mut row = card.y() + 12.0;
+    cx.t(label_x, row, 20.0, "Cockpit service", theme::T_SMALL, REGULAR, theme::ink_faint());
+    let (service, service_tone) = if st.remote.socket_active {
+        ("Available", theme::ink())
+    } else {
+        ("Not running", theme::clay())
+    };
+    cx.t(value_x, row, 20.0, service, theme::T_BODY, MEDIUM, service_tone);
+    row += 28.0;
+    cx.t(label_x, row, 20.0, "Network access", theme::T_SMALL, REGULAR, theme::ink_faint());
+    let (access, access_tone) = if st.remote.enabled {
+        ("Allowed on this network", theme::accent_deep())
+    } else {
+        ("This computer only", theme::ink_soft())
+    };
+    cx.t(value_x, row, 20.0, access, theme::T_BODY, MEDIUM, access_tone);
+    row += 28.0;
+    cx.t(label_x, row, 20.0, "Sign in as", theme::T_SMALL, REGULAR, theme::ink_faint());
+    let user = if st.remote.user.is_empty() {
+        "your account".to_string()
+    } else {
+        st.remote.user.clone()
+    };
+    cx.t(value_x, row, 20.0, &user, theme::T_BODY, MEDIUM, theme::ink());
+    y = card.bottom() + 16.0;
+
+    if st.remote.enabled {
+        if st.remote.urls.is_empty() {
+            cx.t(
+                pane.x() + 20.0,
+                y,
+                20.0,
+                "No network address yet: connect Wi-Fi or Ethernet first.",
+                theme::T_SMALL,
+                REGULAR,
+                theme::ink_faint(),
+            );
+            y += 26.0;
+        } else {
+            widgets::section_label(cx, pane.x() + 20.0, y, "Open from another computer");
+            y += 18.0;
+            for (i, url) in st.remote.urls.iter().take(3).enumerate() {
+                cx.t(pane.x() + 20.0, y, 24.0, url, theme::T_BODY, MEDIUM, theme::ink());
+                widgets::button(
+                    cx,
+                    render::rect(pane.right() - 100.0, y - 3.0, 80.0, 26.0),
+                    "Copy",
+                    widgets::Style::Ghost,
+                    Action::RemoteCopy(i),
+                );
+                y += 28.0;
+            }
+        }
+        y += 6.0;
+    }
+
+    let (label, style) = if st.remote.enabled {
+        ("Turn off network access", widgets::Style::Secondary)
+    } else {
+        ("Allow access from this network", widgets::Style::Primary)
+    };
+    widgets::button(
+        cx,
+        render::rect(pane.x() + 20.0, y, 236.0, 34.0),
+        label,
+        style,
+        Action::RemoteToggle,
+    );
+    widgets::button(
+        cx,
+        render::rect(pane.x() + 268.0, y, 146.0, 34.0),
+        "Open Cockpit",
+        widgets::Style::Ghost,
+        Action::RemoteOpen,
+    );
+    widgets::button(
+        cx,
+        render::rect(pane.x() + 426.0, y, 92.0, 34.0),
+        "Refresh",
+        widgets::Style::Ghost,
+        Action::RemoteRefresh,
+    );
+    y += 44.0;
+
+    if st.remote.busy {
+        cx.t(
+            pane.x() + 20.0,
+            y,
+            16.0,
+            "Asking for your password…",
+            theme::T_SMALL,
+            REGULAR,
+            theme::ink_soft(),
+        );
+        y += 18.0;
+    }
+    for line in st.remote.note.iter().rev().take(2) {
+        cx.t(
+            pane.x() + 20.0,
+            y,
+            16.0,
+            line,
+            theme::T_SMALL,
+            REGULAR,
+            theme::clay(),
+        );
+        y += 18.0;
+    }
+    y += 6.0;
+
+    paragraph(
+        cx,
+        pane,
+        &mut y,
+        "Cockpit logs in with this computer's own account and password, and never with root \
+         or a separate web password. The switch needs that password because exposing a login \
+         page on the network is an administrator's decision. Do not forward port 9090 from a \
+         router: this is for your own network only. The certificate is generated on this \
+         machine, so the browser warns once.",
+    );
 }
 
 fn display(cx: &mut Ctx, pane: Rect) {

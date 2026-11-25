@@ -72,9 +72,10 @@ OS. It is ordered by how much it could hurt.
   resizing, no dual-boot install alongside Windows, no LUKS, no LVM and no swap
   partition (zram is the swap). Manual partitioning, LVM and LUKS are hidden in
   the configuration, so they are absent rather than untested.
-- **Packages are installed with APT or a terminal.** r14 removed the Software
-  Center window, its `Super+S` binding and the `refurb-apt` helper; Settings →
-  Updates still refreshes and installs system updates.
+- **Packages are installed from the App Store, APT or a terminal.** r14 removed
+  the custom Software Center window, its `Super+S` binding and the `refurb-apt`
+  helper; r15 adds DDE Store as the graphical store, and Settings → Updates
+  still refreshes and installs system updates.
 - **`sudo` rule without a password** for the two package helpers. On a machine
   that boots straight into a session, a password prompt would be theatre; the
   helpers validate their arguments and cannot be used to run anything else.
@@ -187,6 +188,42 @@ OS. It is ordered by how much it could hurt.
 - **Installation on the Chromebook is the outstanding test.** Virtual disks
   exercise the wizard, the partitioning, the bootloader module and the target
   system, but not the machine's firmware, its eMMC and its USB behaviour.
+
+## Round 15 additions
+
+- **The store is heavy while it is open.** `dde-store` held 257,520 KiB
+  resident with the full catalogue loaded on a 2 GB guest. Nothing of it runs
+  when the window is closed, so the idle budget is unchanged, but a machine
+  already short of memory should close it when finished. This is DTK plus the
+  whole 35k-component AppStream pool; trimming it would mean writing a
+  different store.
+- **The store window is white and its cards have no icons.** It uses DTK's own
+  light palette instead of the Reawakening dark one (there is no DDE platform
+  theme on this system) and the AppStream icon cache is not present, so
+  category cards show names and summaries without artwork. Cosmetic; the
+  functions are unaffected.
+- **Store search covers the catalogue, not installed third-party packages.**
+  Jellyfin Media Player ships a valid AppStream component, but it comes from
+  the Jellyfin repository and is not in Debian's catalogue, so searching
+  `jellyfin` in the store finds nothing. It stays in the launcher. VLC, GIMP and
+  any Debian package are found.
+- **The store's Uninstall button was not clicked in this round.** Installation
+  was done through the store with the polkit prompt; removal was done with APT
+  afterwards, and only the surrounding applications were checked for damage.
+  The button follows the same code path as Install.
+- **Cockpit LAN access is off on a fresh install.** This is deliberate: the
+  socket is loopback-only until Settings → Remote (or `refurb-cockpit on`) turns
+  it on. A user who types `https://CHROMEBOOK-IP:9090` before doing that gets no
+  connection, which is the report round 15 started from. The panel is the way
+  to turn it on.
+- **Cockpit's interactive login and web terminal were not exercised in a
+  browser in this round.** The login page was served correctly on loopback and
+  through a forwarded port (HTTP 200, valid TLS, form present), and the socket
+  survives reboot; the browser login and Terminal page are hardware-acceptance
+  items.
+- **The credentials-before-hardware gap remains.** Everything in
+  `round-15.md` is QEMU with TCG. Real Wi-Fi, real PackageKit downloads over it,
+  and the Chromebook's own keyboard and display are still untested.
 
 ## Round 12 additions
 

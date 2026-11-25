@@ -10,11 +10,17 @@ mask() {
 }
 
 # Update daemons, catalogue refreshers, indexers and search daemons.
+#
+# packagekit.service is deliberately *not* in this list since Round 15: the
+# App Store reaches PackageKit over D-Bus, and masking the unit disables that
+# activation too. The unit has no [Install] section, so unmasking does not
+# start it at boot; packagekitd is D-Bus activated by the store and exits after
+# its idle timeout. Only the offline-update mechanism stays masked - Reawakening
+# installs updates from Settings, on the user's command.
 mask \
     apt-daily-upgrade.timer \
     apt-daily-upgrade.service \
     unattended-upgrades.service \
-    packagekit.service \
     packagekit-offline-update.service \
     fwupd.service \
     fwupd-refresh.timer \

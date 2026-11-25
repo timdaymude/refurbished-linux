@@ -1,0 +1,86 @@
+#!/bin/sh
+# Round 15: make the graphical application store work, and keep it quiet.
+#
+# The store needs three things the r14 image did not have: an AppStream
+# catalogue, a reachable PackageKit, and a polkit agent that can ask for a
+# password. Nothing here starts a background update checker: PackageKit is
+# D-Bus activated, and the only refresh it performs is the one the store asks
+# for when the user opens its Updates page.
+set -e
+
+# 0200-no-background-work masks packagekit.service so that no package daemon
+# runs on a machine that updates when its owner asks. A mask also disables
+# D-Bus activation, which is exactly how the store reaches PackageKit. Unmask
+# it again, but leave it disabled: the unit has no [Install] section, so it
+# still never starts at boot, and packagekitd exits after its idle timeout.
+systemctl unmask packagekit.service >/dev/null 2>&1 || true
+systemctl disable packagekit.service >/dev/null 2>&1 || true
+# Offline updates are an update mechanism of their own; Reawakening updates
+# from Settings, so this one stays off.
+systemctl mask packagekit-offline-update.service >/dev/null 2>&1 || true
+
+# The store reads its catalogue from libappstream. On Debian the apt hook
+# fills /var/lib/swcatalog/yaml with symlinks into /var/lib/apt/lists, and
+# 0600-slim deletes those lists to save space: every symlink then dangles,
+# libappstream loads zero components, and the store shows categories with no
+# applications in them. Ship the DEP-11 data itself, in the system catalogue
+# directory, which libappstream reads and never prunes. /var/lib/swcatalog is
+# removed so no stale apt-owned copy can shadow it.
+export DEBIAN_FRONTEND=noninteractive LC_ALL=C
+if ! apt-get -o APT::Sandbox::User=root update >/tmp/store-apt.log 2>&1; then
+    echo "WARNING: apt-get update failed while building the AppStream catalogue" >&2
+    tail -5 /tmp/store-apt.log >&2 || true
+fi
+install -d /usr/share/swcatalog/yaml
+rm -f /usr/share/swcatalog/yaml/debian-*.yml.gz
+catalogs=0
+for dep11 in /var/lib/apt/lists/*Components-amd64.yml.gz; do
+    [ -s "$dep11" ] || continue
+    catalogs=$((catalogs + 1))
+    cp "$dep11" "/usr/share/swcatalog/yaml/debian-$catalogs.yml.gz"
+done
+[ "$catalogs" -gt 0 ] ||
+    echo "WARNING: no DEP-11 catalogue was downloaded" >&2
+rm -rf /var/lib/swcatalog/yaml
+rm -rf /var/cache/swcatalog/cache
+appstreamcli refresh --source=os --force 2>&1 | tail -3 || true
+echo "AppStream: $catalogs catalogue files, $(du -sh /usr/share/swcatalog 2>/dev/null | cut -f1)"
+
+# Say out loud what the store will see, and prove it without the apt lists
+# that 0600-slim is about to delete: the guard hides them for the test. A
+# missing catalogue must fail here, in the build log, not on a first click.
+mv /var/lib/apt/lists /tmp/apt-lists-guard 2>/dev/null || true
+rm -rf /var/cache/swcatalog/cache
+for component in org.videolan.vlc org.gimp.GIMP; do
+    if appstreamcli get "$component" >/dev/null 2>&1; then
+        echo "AppStream: $component is in the catalogue (without apt lists)"
+    else
+        echo "WARNING: the AppStream catalogue has no $component entry" >&2
+    fi
+done
+mv /tmp/apt-lists-guard /var/lib/apt/lists 2>/dev/null || true
+
+# The store must be the locally patched build, not Debian's crashing 1.2.5-2.
+# packages.chroot is installed after the package lists, so dpkg has just
+# upgraded it; this line is what proves it happened.
+if dpkg-query -W -f='${Version}' dde-store 2>/dev/null | grep -q refurb; then
+    echo "Store: dde-store $(dpkg-query -W -f='${Version}' dde-store) (patched build)"
+else
+    echo "WARNING: dde-store is $(dpkg-query -W -f='${Version}' dde-store 2>/dev/null), not the patched build" >&2
+fi
+
+# The launcher reads desktop entries; the store must be one of them.
+if [ -f /usr/share/applications/dde-store.desktop ]; then
+    echo "Store: $(sed -n 's/^Name=//p' /usr/share/applications/dde-store.desktop | head -1) entry present"
+else
+    echo "WARNING: dde-store desktop entry is missing" >&2
+fi
+
+# The polkit agent has no autostart file of its own in this package, so the
+# session starts it from /etc/xdg/labwc/autostart. Record whether it exists,
+# because a missing agent turns every install into "Not authorized".
+[ -x /usr/libexec/polkit-mate-authentication-agent-1 ] &&
+    echo "Polkit: agent present" ||
+    echo "WARNING: polkit agent is missing" >&2
+
+rm -f /tmp/store-apt.log

@@ -4,7 +4,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r14) — dark by default, with a bootable ISO that
+Version **0.3.0** (release r15, test image) — dark by default, with a bootable ISO that
 installs with the Calamares graphical installer and ships the Reawakening
 wallpapers.
 
@@ -42,8 +42,27 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
-- `reawakening-os-0.3.0-r14-amd64.iso` builds end to end and is
-  **1,205,600,256 bytes** with SHA256
+- `reawakening-os-0.3.0-r15-amd64.iso` builds end to end and is
+  **1,187,692,544 bytes** with SHA256
+  (`21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3`). r15 adds
+  **DDE Store** as the graphical application store, and repairs Cockpit's remote
+  access. Three store faults are fixed with a locally built
+  `dde-store 1.2.5-2.2~refurb2` (the Qt Wayland plugin, the home-page crash
+  Debian fixed in 1.2.5-2.1, and a star-ratings request that could keep the
+  catalogue empty forever), the AppStream catalogue now ships in
+  `/usr/share/swcatalog/yaml` instead of dangling symlinks into the deleted apt
+  lists, and PackageKit is D-Bus activated instead of masked. Verified from the
+  shipped ISO in QEMU: the App Store is in the launcher and opens; every
+  category lists real applications; `vlc` and `gimp` searches return the right
+  results; and on a system installed from this ISO, installing `galculator`
+  through the store asked for the account password, installed it, and it
+  survived a reboot. Cockpit is active and enabled at boot, serves its login
+  page over HTTPS on loopback and through a forwarded port, and becomes
+  reachable from another machine once Settings → Remote is switched on. Not yet
+  verified: the store's Uninstall button, a browser login followed by the web
+  terminal, and anything on real hardware — see `docs/round-15.md`.
+- `reawakening-os-0.3.0-r14-amd64.iso` (previous release) builds end to end and
+  is **1,205,600,256 bytes** with SHA256
   (`37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6`). r14
   replaces the terminal installer with **Calamares 3.3.14** and retires the
   custom Software Center. The desktop entry launches Calamares, which walks
@@ -305,10 +324,11 @@ workarounds, requirements and external downloads.
   are installed with APT or a terminal, and Settings → Updates remains.
 - **Updates**: no checker. A once-a-day, short-lived metadata refresh keeps
   “check for updates” instant; installing is always a deliberate action.
-- **Cockpit**: installed and socket-activated. The live medium is loopback-only
-  until `refurb-cockpit on`; the installer enables network access on the
-  installed system unless the user declines. HTTPS with a self-signed
-  certificate, PAM login with the account password.
+- **Cockpit**: installed and socket-activated, and loopback-only — on the live
+  medium and on an installed system alike — until Settings → Remote is switched
+  on (or `refurb-cockpit on` runs). HTTPS with a self-signed certificate, PAM
+  login with the account password, plus `cockpit-networkmanager` and
+  `cockpit-storaged` for the Network and Disks pages.
 
 ## Philosophy
 

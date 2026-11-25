@@ -149,6 +149,9 @@ enum Msg {
     Log(String),
     Updates(Result<(u32, u32), String>),
     Displays(Vec<ui::DisplayOutput>),
+    /// Cockpit's state, re-read after the panel opened or after a change. The
+    /// second field is the line to show: what changed, or why it did not.
+    Remote(Result<system::CockpitState, String>, Option<String>),
     /// A machine status snapshot, gathered on a worker thread.
     Status(Box<ui::Status>),
     /// The audio worker read the sink back after writing it, so the panel shows
@@ -1343,6 +1346,9 @@ impl Session {
                 if section == Section::Display {
                     self.spawn_displays();
                 }
+                if section == Section::Remote {
+                    self.spawn_remote();
+                }
             }
             Action::Wallpaper(index) => {
                 // The pixels are already decoded and cached, so the repaint at
@@ -1356,6 +1362,41 @@ impl Session {
             }
             Action::UpdateCheck => self.spawn_update(false),
             Action::UpdateInstall => self.spawn_update(true),
+            Action::RemoteRefresh => self.spawn_remote(),
+            Action::RemoteOpen => {
+                if !system::open_cockpit() {
+                    self.app.st.remote.note = vec!["No browser is installed.".to_string()];
+                }
+            }
+            Action::RemoteCopy(index) => {
+                let url = self.app.st.remote.urls.get(index).cloned();
+                if let Some(url) = url {
+                    let note = if system::copy_text(&url) {
+                        format!("Copied {url}")
+                    } else {
+                        format!("Could not copy. The address is {url}")
+                    };
+                    self.app.st.remote.note = vec![note];
+                }
+            }
+            Action::RemoteToggle => {
+                let enable = !self.app.st.remote.enabled;
+                self.app.st.remote.busy = true;
+                self.app.st.remote.note.clear();
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    let changed = system::set_cockpit_remote(enable);
+                    let state = system::cockpit_state();
+                    let note = match changed {
+                        Ok(()) if enable => {
+                            Some("Network access is allowed now.".to_string())
+                        }
+                        Ok(()) => Some("Network access is off again.".to_string()),
+                        Err(error) => Some(error),
+                    };
+                    let _ = tx.send(Msg::Remote(state, note));
+                });
+            }
             Action::DisplayMode(i) => {
                 let output = self
                     .app
@@ -1531,6 +1572,16 @@ impl Session {
         });
     }
 
+    /// Read Cockpit's state on a worker thread: `systemctl` and `ip` are
+    /// subprocesses and must never run inside the event loop.
+    fn spawn_remote(&mut self) {
+        self.app.st.remote.busy = true;
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Remote(system::cockpit_state(), None));
+        });
+    }
+
     fn spawn_update(&mut self, install: bool) {
         self.app.st.updates_note.clear();
         self.app
@@ -1651,6 +1702,23 @@ impl Session {
             Msg::Displays(displays) => {
                 self.app.st.display.outputs = displays;
                 self.app.st.display.selected = 0;
+            }
+            Msg::Remote(result, note) => {
+                self.app.st.remote.busy = false;
+                match result {
+                    Ok(state) => {
+                        self.app.st.remote.socket_active = state.socket_active;
+                        self.app.st.remote.enabled = state.remote;
+                        self.app.st.remote.urls = state.urls;
+                        self.app.st.remote.user = state.user;
+                        if let Some(note) = note {
+                            self.app.st.remote.note = vec![note];
+                        }
+                    }
+                    Err(error) => {
+                        self.app.st.remote.note = vec![error];
+                    }
+                }
             }
             Msg::Status(status) => {
                 // A poll that lands while a slider is being dragged must not

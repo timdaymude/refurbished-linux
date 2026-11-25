@@ -43,10 +43,11 @@ pub enum Glyph {
     Apps,
     Dot,
     Mic,
+    Store,
 }
 
 impl Glyph {
-    pub const ALL: [Glyph; 33] = [
+    pub const ALL: [Glyph; 34] = [
         Glyph::Brand,
         Glyph::Grid,
         Glyph::Search,
@@ -80,6 +81,7 @@ impl Glyph {
         Glyph::Chat,
         Glyph::Doc,
         Glyph::Mic,
+        Glyph::Store,
     ];
 
     pub fn name(self) -> &'static str {
@@ -117,6 +119,7 @@ impl Glyph {
             Glyph::Apps => "apps",
             Glyph::Dot => "dot",
             Glyph::Mic => "microphone",
+            Glyph::Store => "store",
         }
     }
 }
@@ -208,6 +211,20 @@ pub fn draw(pm: &mut Pixmap, g: Glyph, r: tiny_skia::Rect, color: Color, stroke:
             scissors(pm, poly(&[(x(6.1), y(7.4)), (x(8.1), y(9.4))], false), color, w * 0.85);
             scissors(pm, poly(&[(x(17.9), y(7.4)), (x(15.9), y(9.4))], false), color, w * 0.85);
             scissors(pm, poly(&[(x(8.4), y(19.2)), (x(15.6), y(19.2))], false), color, w * 0.6);
+        }
+        Glyph::Store => {
+            // A shopping bag with a download arrow: the application store.
+            // Bag body, then the handle above it, then the arrow. Three
+            // strokes, so it still reads at 15 px in the bar.
+            round_stroke(pm, sub(4.4, 8.1, 15.2, 12.2), 3.0 * s, color, sw * 0.85);
+            scissors(pm, arc_path(x(12.0), y(8.1), 3.4 * s, 180.0, 360.0), color, sw * 0.8);
+            scissors(pm, poly(&[(x(12.0), y(11.7)), (x(12.0), y(15.9))], false), color, sw * 0.75);
+            scissors(
+                pm,
+                poly(&[(x(10.1), y(14.0)), (x(12.0), y(15.9)), (x(13.9), y(14.0))], false),
+                color,
+                sw * 0.75,
+            );
         }
         Glyph::Grid | Glyph::Apps => {
             for (a, b) in [(3.5, 3.5), (13.5, 3.5), (3.5, 13.5), (13.5, 13.5)] {

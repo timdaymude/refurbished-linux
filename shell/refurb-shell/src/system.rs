@@ -1164,6 +1164,94 @@ pub fn run_update_check() -> Result<(u32, u32), String> {
 }
 
 // ---------------------------------------------------------------------------
+// remote administration (Cockpit)
+// ---------------------------------------------------------------------------
+
+/// The state `refurb-cockpit state` reports. One source of truth for the
+/// Settings panel and for the terminal command: neither guesses from unit
+/// files that a future image might move.
+#[derive(Clone, Debug, Default)]
+pub struct CockpitState {
+    pub socket_active: bool,
+    /// True when the local network may reach port 9090.
+    pub remote: bool,
+    /// `https://<address>:9090`, one per usable address.
+    pub urls: Vec<String>,
+    pub user: String,
+}
+
+pub fn cockpit_state() -> Result<CockpitState, String> {
+    let out = run("/usr/lib/refurb/refurb-cockpit", &["state"]).ok_or_else(|| {
+        "Cockpit's helper could not report its state.".to_string()
+    })?;
+    let mut state = CockpitState::default();
+    for line in out.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key {
+            "socket" => state.socket_active = value == "active",
+            "remote" => state.remote = value == "on",
+            "url" => state.urls.push(value.to_string()),
+            "user" => state.user = value.to_string(),
+            _ => {}
+        }
+    }
+    Ok(state)
+}
+
+/// Turn local-network access on or off. `pkexec` runs the same helper the
+/// terminal uses, through the polkit agent, so the change needs the account's
+/// password and the shell never writes a systemd drop-in itself. Port 9090 is
+/// never forwarded to the internet by anything here.
+pub fn set_cockpit_remote(enabled: bool) -> Result<(), String> {
+    let action = if enabled { "on" } else { "off" };
+    let out = Command::new("pkexec")
+        .args(["/usr/lib/refurb/refurb-cockpit", action])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("Could not ask for a password: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let text = if !stderr.is_empty() { stderr } else { stdout };
+    match out.status.code() {
+        // pkexec: 126 dismissed, 127 not authorised or not found.
+        Some(126) => Err("The password dialog was cancelled.".to_string()),
+        Some(127) => Err("Not allowed. Sign in as an administrator.".to_string()),
+        _ if !text.is_empty() => Err(text.lines().last().unwrap_or("").to_string()),
+        _ => Err("The change was not made.".to_string()),
+    }
+}
+
+/// Put a short string on the Wayland clipboard. wl-copy forks and returns, so
+/// this does not hold the panel open while the selection is owned.
+pub fn copy_text(text: &str) -> bool {
+    use std::io::Write;
+    let Ok(mut child) = Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        if stdin.write_all(text.as_bytes()).is_err() {
+            return false;
+        }
+    }
+    child.wait().map(|status| status.success()).unwrap_or(false)
+}
+
+pub fn open_cockpit() -> bool {
+    launch("brave-browser", &["--new-window", "https://127.0.0.1:9090"])
+        || launch("xdg-open", &["https://127.0.0.1:9090"])
+}
+
+// ---------------------------------------------------------------------------
 // about
 // ---------------------------------------------------------------------------
 

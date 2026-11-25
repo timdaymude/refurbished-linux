@@ -1,0 +1,90 @@
+Description: Never let the ratings server hide the application catalogue
+ RatingsHelper fetches star ratings from https://odrs.gnome.org at startup, and
+ PackageKitSource only emits its category, search and installed lists from the
+ RatingsHelper::fetched signal. That request is the store's only network
+ dependency: with no route to odrs - offline, behind a captive portal, or on a
+ network that answers with an IPv6 address the host cannot reach - the signal
+ never arrives and every category stays empty forever. The application
+ catalogue itself is local AppStream data and has no reason to wait.
+ .
+ Give the request a four-second transfer timeout and a four-second fallback
+ timer; whichever comes first emits fetched once. When the ratings are
+ unavailable the catalogue is shown without them.
+Forwarded: not-needed
+Last-Update: 2026-11-25
+--- a/backend/ratingshelper.h
++++ b/backend/ratingshelper.h
+@@ -4,6 +4,7 @@
+ #include <QObject>
+ #include <QHash>
+ #include <QJsonObject>
++#include <QByteArray>
+ 
+ class RatingsHelper : public QObject
+ {
+@@ -18,6 +19,8 @@
+ private:
+     static RatingsHelper *currentInstance;
+     RatingsHelper();
++    void finish(const QByteArray &data);
++    bool done = false;
+     QHash<QString, QJsonObject> ratingsList;
+ 
+ signals:
+--- a/backend/ratingshelper.cpp
++++ b/backend/ratingshelper.cpp
+@@ -3,6 +3,7 @@
+ #include <QNetworkRequest>
+ #include <QNetworkReply>
+ #include <QJsonDocument>
++#include <QTimer>
+ #include <QtMath>
+ #include <QDebug>
+ 
+@@ -20,19 +21,35 @@
+ {
+     QNetworkAccessManager *networkManager = new QNetworkAccessManager;
+     QNetworkRequest request(QUrl("https://odrs.gnome.org/1.0/reviews/api/ratings"));
+-    networkManager->get(request);
++    // Star ratings are a nicety; the catalogue is local. The store used to wait
++    // for this request before it would show a single category, so an offline
++    // machine, a captive portal or a network whose only answer is an IPv6
++    // address this host cannot reach left the store permanently empty.
++    request.setTransferTimeout(4000);
++    QNetworkReply *reply = networkManager->get(request);
+     qDebug() << "[ RATINGS ] Fetching ratings...";
+-    connect(networkManager, &QNetworkAccessManager::finished, this, [ = ] (QNetworkReply *reply) {
+-        QByteArray data = reply->readAll();
+-        QJsonObject array = QJsonDocument::fromJson(data).object();
+-        for (const QString &key : array.keys()) {
+-            ratingsList.insert(key, array.value(key).toObject());
+-        }
+-        emit(fetched());
+-        available = true;
+-        qDebug() << "[ RATINGS ] Ratings fetched";
+-        disconnect(this, &RatingsHelper::fetched, nullptr, nullptr);
++    connect(reply, &QNetworkReply::finished, this, [ = ] {
++        const QByteArray data = reply->readAll();
++        reply->deleteLater();
++        finish(data);
+     });
++    QTimer::singleShot(4000, this, [ = ] { finish(QByteArray()); });
++}
++
++void RatingsHelper::finish(const QByteArray &data)
++{
++    if (done)
++        return;
++    done = true;
++    QJsonObject array = QJsonDocument::fromJson(data).object();
++    for (const QString &key : array.keys()) {
++        ratingsList.insert(key, array.value(key).toObject());
++    }
++    available = !array.isEmpty();
++    emit(fetched());
++    qDebug() << "[ RATINGS ]"
++             << (available ? "Ratings fetched"
++                           : "Ratings unavailable; showing the catalogue without them");
+ }
+ 
+ double RatingsHelper::averageRating(QString app)

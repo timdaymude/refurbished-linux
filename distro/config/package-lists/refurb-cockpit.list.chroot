@@ -1,5 +1,11 @@
-# Cockpit: socket activated, bound to 127.0.0.1 only.
+# Cockpit: socket activated, bound to 127.0.0.1 only until the user allows the
+# local network (Settings → Remote, or `refurb-cockpit on` in a terminal).
 cockpit
 cockpit-ws
 cockpit-bridge
 cockpit-system
+# The Network page. Earlier rounds claimed working network configuration, but
+# this package was never installed, so Cockpit had no Network page at all.
+cockpit-networkmanager
+# The Disks page. Needs udisks2 (already in the desktop list) and python3-dbus.
+cockpit-storaged

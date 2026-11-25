@@ -21,6 +21,7 @@ full per-release report.
 | 0.3.0-r12 desktop, dictation, audio **(prerelease)** | 1,158,348,800 | `9291a33cf1e7d9db7f329795ff478729f28550e4fa186c94496b5b813cd685c6` | `v0.3.0-r12` — `reawakening-os-0.3.0-r12-amd64.iso` | none (release is the copy) |
 | 0.3.0-r13 installer, administrator, Cockpit, amplification **(prerelease)** | 1,176,059,904 | `40ed8f124f29d3f5c7f3f926b78617b3324df982df96ca833d41015e3c9130b9` | `v0.3.0-r13` — `reawakening-os-0.3.0-r13-amd64.iso` | none (release is the copy) |
 | 0.3.0-r14 Calamares installer, Software Center removed **(prerelease)** | 1,205,600,256 | `37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6` | `v0.3.0-r14` — `reawakening-os-0.3.0-r14-amd64.iso` | none (release is the copy) |
+| 0.3.0-r15 DDE Store, Cockpit remote fixed **(prerelease)** | 1,187,692,544 | `21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3` | `v0.3.0-r15` — `reawakening-os-0.3.0-r15-amd64.iso` | none (release is the copy) |
 
 ## Naming
 
@@ -34,6 +35,19 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r15**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified from the shipped ISO in QEMU: the App Store appears in the launcher
+  and opens without crashing; the catalogue loads with real applications in
+  every category; searching `vlc` and `gimp` returns the right entries; on a
+  system installed from this ISO, installing `galculator` through the store
+  raised the polkit password prompt, installed the package, and it survived a
+  reboot, with Brave, Cockpit, the store and Jellyfin all intact. Cockpit was
+  checked on that installed system: socket active and enabled at boot, login
+  page served over HTTPS on loopback and through a forwarded port, LAN access
+  off until Settings → Remote (or `refurb-cockpit on`) turns it on, after which
+  the URL answers HTTP 200 from another machine. Not verified: the store's
+  Uninstall button, a browser login followed by the web terminal, and anything
+  on real hardware. Details in `round-15.md`.
 - **r14**: published as a prerelease with the ISO and its `.sha256` report.
   Verified before publishing, from the shipped ISO in QEMU: a full BIOS install
   and a full UEFI install (the UEFI disk booted with an empty variable store),

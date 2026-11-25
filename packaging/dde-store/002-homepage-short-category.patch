@@ -1,0 +1,30 @@
+Description: Do not read past the end of a short AppStream category
+ The home page builds nine category rows with "for (int i = 0; i < 10; i++)"
+ over the list of applications AppStream returned for that category. A Debian
+ system's categories routinely contain fewer than ten desktop applications, and
+ items[i] then reads past the end of the QList: the store segfaults while its
+ main window is being constructed, before it can draw anything.
+ .
+ Debian 1.2.5-2.1 fixes this by porting to Qt 6 and changing the loop to
+ qMin(10, items.size()). This patch applies only that one-line bound (plus the
+ comment) to the Qt 5 source, so no unrelated component changes.
+Origin: upstream, https://github.com/ubuntudde/dde-store/pull/34
+Bug-Debian: https://bugs.debian.org/1117833
+Forwarded: not-needed
+Last-Update: 2026-11-25
+--- a/pages/homepage.cpp
++++ b/pages/homepage.cpp
+@@ -65,7 +65,12 @@
+             for (App *app : map.values()) {
+                 items.insert(0, app);
+             }
+-            for (int i = 0; i < 10; i++) {
++            // An AppStream category on a normal Debian system usually has
++            // fewer than ten desktop applications. Reading items[i] past the
++            // end is undefined behaviour and crashed the store while it was
++            // building this page - the segfault seen on the Chromebook.
++            // Fixed upstream in 1.2.5-2.1 (Debian #1112833).
++            for (int i = 0; i < qMin(10, items.size()); i++) {
+                 list->addItem(items[i]->name, items[i]->icon, i);
+                 apps->append(items[i]);
+             }

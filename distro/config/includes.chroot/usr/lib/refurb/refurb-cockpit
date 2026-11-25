@@ -13,6 +13,7 @@
 #   refurb-cockpit on|off     allow or refuse access from the local network
 #   refurb-cockpit password   set this account's password (Cockpit login)
 #   refurb-cockpit ip         print the addresses other computers can use
+#   refurb-cockpit state      machine-readable state for Settings -> Remote
 #   refurb-cockpit open       open the local Cockpit page in the browser
 #
 # The shipped socket drop-in is 10-refurb-loopback.conf; this script writes
@@ -20,6 +21,10 @@
 # order meant `on` was silently undone by the loopback file, which is why the
 # page stayed unreachable from another computer. Cockpit speaks HTTPS, so every
 # address printed here is https://.
+#
+# Settings -> Remote runs `pkexec refurb-cockpit on|off`, so this script also
+# has to work when polkit started it: PKEXEC_UID names the account that asked,
+# and `id -un` would answer "root".
 set -u
 
 PANEL=/usr/lib/refurb
@@ -44,12 +49,46 @@ addresses() {
 # "P" when a password is set, "NP" when the account has none, "L" when locked.
 password_state() {
     if have passwd; then
-        passwd -S "$(id -un)" 2>/dev/null | awk '{print $2}'
+        passwd -S "$(current_user)" 2>/dev/null | awk '{print $2}'
     fi
 }
 
 remote_enabled() {
     [ -f "$DROPIN" ]
+}
+
+# The account Cockpit will ask to log in as: sudo's caller, polkit's caller, or
+# the current user. Under pkexec `id -un` is root, which is never a valid
+# Cockpit login (root is in /etc/cockpit/disallowed-users).
+current_user() {
+    if [ -n "${PKEXEC_UID:-}" ] && have getent; then
+        getent passwd "$PKEXEC_UID" 2>/dev/null | cut -d: -f1
+    elif [ -n "${SUDO_USER:-}" ]; then
+        printf '%s\n' "$SUDO_USER"
+    else
+        id -un
+    fi
+}
+
+# Parsed by the shell's Settings -> Remote panel (system::cockpit_state).
+# One key=value per line, nothing else, no translations: this is an interface.
+show_state() {
+    if systemctl is-active --quiet cockpit.socket 2>/dev/null; then
+        say "socket=active"
+    else
+        say "socket=inactive"
+    fi
+    if remote_enabled; then
+        say "remote=on"
+    else
+        say "remote=off"
+    fi
+    say "user=$(current_user)"
+    if remote_enabled; then
+        addresses | while read -r _ addr; do
+            say "url=https://$addr:9090"
+        done
+    fi
 }
 
 show_status() {
@@ -82,6 +121,7 @@ show_status() {
         say "  To administer this machine from another computer on the same network:"
         say "    refurb-cockpit password   # once, if no password is set"
         say "    refurb-cockpit on"
+        say "  Settings -> Remote does the same thing without a terminal."
     fi
     say ""
     say "  Local page: https://$LOOPBACK:9090"
@@ -109,7 +149,7 @@ on | enable)
     exec "$0" _on
     ;;
 _on)
-    target_user=${SUDO_USER:-$(id -un)}
+    target_user=$(current_user)
     install -d "$(dirname "$DROPIN")"
     cat >"$DROPIN" <<'CONF'
 # Written by refurb-cockpit on: Cockpit answers on every interface so that an
@@ -119,6 +159,11 @@ _on)
 ListenStream=
 ListenStream=9090
 CONF
+    # An installed system normally has the socket enabled already, but an image
+    # or an administrator could have disabled it; "allow access" must work in
+    # one click, not require a second trip to a terminal.
+    systemctl unmask cockpit.socket >/dev/null 2>&1 || true
+    systemctl enable cockpit.socket >/dev/null 2>&1 || true
     systemctl daemon-reload
     systemctl restart cockpit.socket
     say "Remote administration enabled. From another computer on this network:"
@@ -148,19 +193,22 @@ password | passwd)
     # a current one that does not exist. Setting it through sudo avoids that and
     # is the same operation on an installed system.
     if [ "$(id -u)" -ne 0 ]; then
-        exec sudo passwd "$(id -un)"
+        exec sudo passwd "$(current_user)"
     fi
-    exec passwd "${SUDO_USER:-$(id -un)}"
+    exec passwd "$(current_user)"
     ;;
 ip | address | addresses)
     show_ip
+    ;;
+state)
+    show_state
     ;;
 open)
     exec brave-browser --new-window "https://$LOOPBACK:9090"
     ;;
 status) show_status ;;
 *)
-    say "usage: refurb-cockpit [status|on|off|password|ip|open]" >&2
+    say "usage: refurb-cockpit [status|on|off|password|ip|state|open]" >&2
     exit 2
     ;;
 esac

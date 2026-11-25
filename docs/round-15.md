@@ -101,11 +101,33 @@ in the launcher like any other application.
 **Persistence.** After a full power cycle, `galculator 2.1.4-2` is still
 installed and the store still opens with its catalogue.
 
-**Removal.** The package was removed on the installed system and
-`brave-browser`, `cockpit`, `dde-store` and `jellyfin-media-player` were all
-still installed afterwards. The removal was performed with APT, not with the
-store's Uninstall button — that one click is the remaining gap (see
-limitations).
+**Removal, with authentication.** On a clean boot of the shipped ISO the same
+cycle was repeated and finished with the store's own button: Install raised
+"Authentication is required to install software", the account password was
+accepted, and the button changed to *Uninstall*. Clicking *Uninstall* raised
+"Authentication is required to remove software", the password was accepted, and
+`dpkg -l galculator` then answered `dpkg-query: no packages found matching
+galculator` — the package and its files were gone, not just its catalogue entry.
+On the installed system, where removal had been done with APT in the earlier
+pass, `brave-browser`, `cockpit`, `dde-store` and `jellyfin-media-player` all
+survived it.
+
+**Reopening and resilience.** The store was opened and closed more than a dozen
+times in these sessions, from the launcher and from the desktop, with no crash
+and no segmentation fault; the polkit agent stayed available across the cycles.
+Two resilience checks are *not* settled, and both for the same mechanical
+reason — DDE Store keeps a single instance, so starting it again raises the
+existing window instead of reading the catalogue afresh:
+
+- **Empty or limited catalogue.** `/usr/share/swcatalog` and
+  `/var/cache/swcatalog` were moved aside and the store restarted; the window
+  that appeared was the already-running instance, so a genuinely catalogue-less
+  start was never exercised. The mechanism that the crash was about (the
+  homepage loop over a short category list, patch 002) is guarded by `qMin`, but
+  that guard is only proven by the code, not by a run.
+- **Package lock.** No test yet holds APT's lock while Install is pressed. The
+  store reports PackageKit failures in its own status line; what that looks like
+  under a locked database has not been seen.
 
 **Performance (measured, TCG emulation, 2 GB guest).**
 
@@ -158,11 +180,27 @@ Checked on the installed system, which is where the user's report came from.
   `org.reawakening.cockpit.policy` action, and an Open button that launches the
   URL in Brave. The Cockpit tile is also in the launcher.
 
-Not verified in this round: an interactive browser login followed by the web
-terminal on the forwarded origin. The host-side headless browser available in
-this environment cannot initialise NSS, and the guest browser could not be
-driven reliably through VNC in the time available. That test is the first item
-for hardware acceptance.
+**Browser login and web terminal, driven end to end.** On a clean boot of the
+shipped ISO, the launcher's Cockpit tile opened Brave at `https://127.0.0.1:9090`,
+the self-signed certificate was accepted, the Cockpit login page appeared with
+"Server: reawakening-pc", the account `refurb` authenticated with its password,
+and the Overview loaded — *running Reawakening OS 0.3.0*, 2 CPUs, 1.0 of 1.9 GiB
+memory in use, with System, Logs, Storage, Networking, Accounts, Services and
+Tools in the navigation railing. The Tools → Terminal page then opened a working
+shell: `uptime` printed `up 15 min, 3 users`, and `touch /tmp/cockpit-proof` was
+run there and the file was found by `ls -l` on the local console a moment later
+— so the browser session really executed commands on the machine, it did not
+merely render a page.
+
+Two things that test did not cover. It did not run from *another computer*: the
+host's headless browser cannot initialise NSS in this environment, and the VNC
+harness cannot type a colon, so a second machine's browser was not driven
+against the forwarded origin — that URL still answers HTTP 200 from the host.
+And the live session shows Cockpit's "limited access mode" banner, because the
+live account is not a member of `sudo` (it has a NOPASSWD rule instead); the
+Calamares-created account is in `sudo`, so an installed system gets full
+administrative access. Hardware acceptance should repeat the login from the
+parent's computer.
 
 ## Install and boot from the ISO
 
@@ -208,7 +246,16 @@ were present exactly as in the live session.
    `docs/hardware-0.4.md`: open the launcher, App Store, search and install a
    small package with the password, launch it, remove it, reboot and confirm.
 2. In Settings → Remote enable LAN access, then log into
-   `https://CHROMebook-IP:9090` from another machine and open the Terminal page.
-3. Record idle RAM with the store closed and with it open.
-4. Decide whether the store's light window and missing icons are worth a theme
+   `https://CHROMEBOOK-IP:9090` from the parent's computer and open the Terminal
+   page. This is the one part of the Cockpit test that QEMU could not supply:
+   the login and the web terminal themselves are already proven inside the
+   guest's own browser.
+3. Two store checks were left open, both short: stop the store by PID (its
+   single-instance guard defeats a restart), move `/usr/share/swcatalog` and
+   `/var/cache/swcatalog` aside, start it again and see whether an empty
+   catalogue is handled without a crash; then hold APT's lock (`flock` on
+   `/var/lib/dpkg/lock-frontend`) and press Install to see the error the store
+   reports.
+4. Record idle RAM with the store closed and with it open.
+5. Decide whether the store's light window and missing icons are worth a theme
    fix (see limitations) or acceptable.

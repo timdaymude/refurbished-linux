@@ -45,9 +45,16 @@ applies to new images only.
   checked on that installed system: socket active and enabled at boot, login
   page served over HTTPS on loopback and through a forwarded port, LAN access
   off until Settings → Remote (or `refurb-cockpit on`) turns it on, after which
-  the URL answers HTTP 200 from another machine. Not verified: the store's
-  Uninstall button, a browser login followed by the web terminal, and anything
-  on real hardware. Details in `round-15.md`.
+  the URL answers HTTP 200 from another machine. The published asset was then
+  downloaded again, and its SHA-256 matches the one shipped. From that download
+  in a fresh boot: installing `galculator` through the store raised the polkit
+  prompt, and the store's own *Uninstall* button removed it again (dpkg: no
+  packages found) with Brave, Cockpit, the store and Jellyfin intact; the
+  launcher's Cockpit tile opened Brave, `refurb` logged in to Cockpit, and the
+  web terminal ran commands that were confirmed from the local console. Not
+  verified: an empty catalogue and a locked package database (the store's
+  single-instance guard blocked the first), Cockpit's login from a second
+  computer's browser, and anything on real hardware. Details in `round-15.md`.
 - **r14**: published as a prerelease with the ISO and its `.sha256` report.
   Verified before publishing, from the shipped ISO in QEMU: a full BIOS install
   and a full UEFI install (the UEFI disk booted with an empty variable store),

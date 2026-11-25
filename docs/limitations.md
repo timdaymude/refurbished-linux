@@ -207,20 +207,29 @@ OS. It is ordered by how much it could hurt.
   the Jellyfin repository and is not in Debian's catalogue, so searching
   `jellyfin` in the store finds nothing. It stays in the launcher. VLC, GIMP and
   any Debian package are found.
-- **The store's Uninstall button was not clicked in this round.** Installation
-  was done through the store with the polkit prompt; removal was done with APT
-  afterwards, and only the surrounding applications were checked for damage.
-  The button follows the same code path as Install.
+- **The store's Uninstall button is verified on the live image only.** On a
+  clean boot of the shipped ISO it was clicked, the polkit prompt "Authentication
+  is required to remove software" was answered, and the package disappeared from
+  `dpkg` while Brave, Cockpit, the store and Jellyfin stayed installed. The
+  installed-system pass removed the package with APT instead, so the button has
+  one clean run behind it, not two.
+- **An empty catalogue and a locked package database were not exercised.**
+  DDE Store keeps a single instance, so moving the AppStream data aside and
+  restarting only raised the running window; no test has held APT's lock while
+  Install is pressed. Both are open items for the next round.
 - **Cockpit LAN access is off on a fresh install.** This is deliberate: the
   socket is loopback-only until Settings → Remote (or `refurb-cockpit on`) turns
   it on. A user who types `https://CHROMEBOOK-IP:9090` before doing that gets no
   connection, which is the report round 15 started from. The panel is the way
   to turn it on.
-- **Cockpit's interactive login and web terminal were not exercised in a
-  browser in this round.** The login page was served correctly on loopback and
-  through a forwarded port (HTTP 200, valid TLS, form present), and the socket
-  survives reboot; the browser login and Terminal page are hardware-acceptance
-  items.
+- **Cockpit's interactive login and web terminal are verified on loopback
+  only.** In the guest's own Brave the login page authenticated `refurb` and the
+  Terminal page ran commands (a file it created was found from the console).
+  The same login has not been performed from a second computer's browser: the
+  host browser cannot start in this environment and the VNC harness cannot type
+  a URL with a colon. The forwarded URL answers HTTP 200 from the host. The live
+  account also lands in Cockpit's limited-access mode because it is not in
+  `sudo`; installed accounts are.
 - **The credentials-before-hardware gap remains.** Everything in
   `round-15.md` is QEMU with TCG. Real Wi-Fi, real PackageKit downloads over it,
   and the Chromebook's own keyboard and display are still untested.

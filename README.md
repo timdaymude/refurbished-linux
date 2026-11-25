@@ -58,9 +58,13 @@ icons, its own font, its own interaction model — running on top of the tiny
   through the store asked for the account password, installed it, and it
   survived a reboot. Cockpit is active and enabled at boot, serves its login
   page over HTTPS on loopback and through a forwarded port, and becomes
-  reachable from another machine once Settings → Remote is switched on. Not yet
-  verified: the store's Uninstall button, a browser login followed by the web
-  terminal, and anything on real hardware — see `docs/round-15.md`.
+  reachable from another machine once Settings → Remote is switched on. The
+  published asset was downloaded again and re-tested from a fresh boot: its
+  hash matches, the store's own Uninstall button removed `galculator` after the
+  password prompt, and Brave logged in to Cockpit and ran commands in its web
+  terminal. Not yet verified: an empty catalogue and a locked package database,
+  Cockpit's login from a second computer's browser, and anything on real
+  hardware — see `docs/round-15.md`.
 - `reawakening-os-0.3.0-r14-amd64.iso` (previous release) builds end to end and
   is **1,205,600,256 bytes** with SHA256
   (`37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6`). r14

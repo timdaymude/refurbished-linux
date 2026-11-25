@@ -3,6 +3,9 @@
 **Image:** `reawakening-os-0.3.0-r15-amd64.iso` (prerelease, for hardware testing)
 **Size:** 1,187,692,544 bytes (1.11 GiB)
 **SHA256:** `21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3`
+**Release:** `v0.3.0-r15` —
+<https://github.com/timdaymude/refurbished-linux/releases/tag/v0.3.0-r15>
+(the ISO and its `.sha256` are the assets; there is no other copy)
 **Base:** r14 (unchanged desktop, Calamares, Brave, Jellyfin, dictation, wallpapers)
 **Branch:** `refurb/0.3`
 

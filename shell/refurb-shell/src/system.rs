@@ -1115,52 +1115,112 @@ pub fn set_display_mode(output: &str, mode: &str) -> Result<(), String> {
 // updates
 // ---------------------------------------------------------------------------
 
-/// Number of pending updates, as recorded by the last *manual* check. The GUI
-/// writes this file after `apt-get update`; nothing scans in the background.
-pub fn cached_update_count() -> u32 {
-    let path = std::env::var_os("HOME")
-        .map(|h| Path::new(&h).join(".cache/refurb/security-updates"))
-        .unwrap_or_default();
-    read_trim(&path.display().to_string())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0)
+/// What a simulated upgrade says. `upgrades` is what the Install button would
+/// actually install: it is counted from the same simulation APT runs for the
+/// install itself, so the number on screen and the number of packages that move
+/// cannot disagree. `kept_back` are packages APT will refuse to upgrade because
+/// doing so needs a new package — the case where the panel used to promise
+/// updates that the install then declined to apply.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UpdateScan {
+    pub upgrades: u32,
+    pub security: u32,
+    pub kept_back: u32,
 }
 
-pub fn run_update_check() -> Result<(u32, u32), String> {
-    let upd = run("sudo", &["-n", "/usr/lib/refurb/refurb-update", "--refresh"]).or_else(|| {
-        // Without polkit we can still refresh the lists if they are writable.
-        run("apt-get", &["update"])
-    });
-    upd.ok_or_else(|| "Could not refresh the package lists.".to_string())?;
-    let out = run(
-        "apt-get",
-        &[
-            "--just-print",
-            "--quiet",
-            "upgrade",
-        ],
-    )
-    .ok_or_else(|| "Could not read available updates.".to_string())?;
-    let mut upgrades = 0u32;
-    let mut security = 0u32;
-    for line in out.lines() {
+/// Read the numbers out of `apt-get --just-print upgrade`.
+pub fn parse_upgrade_plan(text: &str) -> UpdateScan {
+    let mut scan = UpdateScan::default();
+    let mut in_kept_back = false;
+    for line in text.lines() {
+        if line.starts_with("The following packages have been kept back") {
+            in_kept_back = true;
+            continue;
+        }
+        if in_kept_back {
+            // The names follow on indented lines, space separated.
+            if line.starts_with(' ') && !line.trim().is_empty() {
+                scan.kept_back += line.split_whitespace().count() as u32;
+                continue;
+            }
+            in_kept_back = false;
+        }
         if !line.starts_with("Inst ") {
             continue;
         }
-        upgrades += 1;
-        if line.contains("-security") {
-            security += 1;
+        scan.upgrades += 1;
+        // APT prints the source archive in parentheses, e.g.
+        // "(2.41-12+deb13u1 Debian-Security:13/stable [amd64])". Matching on
+        // "-security" never fires there: the label is "Debian-Security".
+        let source = line
+            .rsplit_once('(')
+            .and_then(|(_, rest)| rest.split_once(')').map(|(s, _)| s))
+            .unwrap_or("")
+            .to_lowercase();
+        if source.contains("security") {
+            scan.security += 1;
         }
     }
+    scan
+}
+
+/// The numbers as recorded by the last check: total, security, kept back. The
+/// panel reads this at start-up; nothing scans in the background.
+pub fn cached_update_counts() -> (u32, u32, u32) {
+    let path = std::env::var_os("HOME")
+        .map(|h| Path::new(&h).join(".cache/refurb/security-updates"))
+        .unwrap_or_default();
+    let Some(text) = read_trim(&path.display().to_string()) else {
+        return (0, 0, 0);
+    };
+    let mut parts = text.split_whitespace();
+    let first = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // An r15 image wrote a single number: the security count. Files from that
+    // image are read as "this many, all security" rather than thrown away.
+    match (parts.next(), parts.next()) {
+        (Some(security), kept) => (
+            first,
+            security.parse().unwrap_or(first),
+            kept.and_then(|k| k.parse().ok()).unwrap_or(0),
+        ),
+        (None, _) => (first, first, 0),
+    }
+}
+
+/// Kept for the status bar and for callers that only want the total.
+pub fn cached_update_count() -> u32 {
+    cached_update_counts().0
+}
+
+fn write_update_cache(scan: UpdateScan) {
     let path = std::env::var_os("HOME").map(|h| {
         let dir = Path::new(&h).join(".cache/refurb");
         let _ = std::fs::create_dir_all(&dir);
         dir.join("security-updates")
     });
     if let Some(p) = path {
-        let _ = std::fs::write(p, security.to_string());
+        let _ = std::fs::write(p, format!("{} {} {}", scan.upgrades, scan.security, scan.kept_back));
     }
-    Ok((upgrades, security))
+}
+
+/// Count what an upgrade would install, without touching the network. Cheap
+/// enough to run when the panel opens, which is what keeps a count from
+/// outliving the updates it described.
+pub fn count_upgrades() -> Result<UpdateScan, String> {
+    let out = run("apt-get", &["--just-print", "--quiet", "upgrade"])
+        .ok_or_else(|| "Could not read available updates.".to_string())?;
+    let scan = parse_upgrade_plan(&out);
+    write_update_cache(scan);
+    Ok(scan)
+}
+
+pub fn run_update_check() -> Result<UpdateScan, String> {
+    let upd = run("sudo", &["-n", "/usr/lib/refurb/refurb-update", "--refresh"]).or_else(|| {
+        // Without polkit we can still refresh the lists if they are writable.
+        run("apt-get", &["update"])
+    });
+    upd.ok_or_else(|| "Could not refresh the package lists.".to_string())?;
+    count_upgrades()
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,5 +1455,56 @@ mod tests {
         let _ = std::fs::create_dir_all("/tmp/refurb-test-home/.cache/refurb");
         std::fs::write("/tmp/refurb-test-home/.cache/refurb/security-updates", "3").unwrap();
         assert_eq!(cached_update_count(), 3);
+        // An r15 file held only the security count. It is read as "three, all
+        // security" instead of vanishing.
+        assert_eq!(cached_update_counts(), (3, 3, 0));
+        std::fs::write(
+            "/tmp/refurb-test-home/.cache/refurb/security-updates",
+            "7 2 1",
+        )
+        .unwrap();
+        assert_eq!(cached_update_counts(), (7, 2, 1));
+    }
+
+    #[test]
+    fn the_plan_is_counted_the_way_apt_will_install_it() {
+        // Real `apt-get --just-print upgrade` output: three security updates and
+        // one package APT refuses to move without a new dependency.
+        let plan = concat!(
+            "NOTE: This is only a simulation!\n",
+            "Reading package lists...\n",
+            "Building dependency tree...\n",
+            "Calculating upgrade...\n",
+            "The following packages have been kept back:\n",
+            "  linux-image-amd64\n",
+            "The following packages will be upgraded:\n",
+            "  libc6 libssl3 openssl\n",
+            "3 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.\n",
+            "Inst libc6 [2.41-12] (2.41-12+deb13u1 Debian-Security:13/stable [amd64])\n",
+            "Inst libssl3 [3.5.1-1] (3.5.1-1+deb13u1 Debian-Security:13/stable [amd64])\n",
+            "Inst openssl [3.5.1-1] (3.5.1-1+deb13u1 Debian-Security:13/stable [amd64])\n",
+            "Conf libc6 (2.41-12+deb13u1 Debian-Security:13/stable [amd64])\n",
+        );
+        let scan = parse_upgrade_plan(plan);
+        assert_eq!(scan.upgrades, 3);
+        assert_eq!(scan.security, 3);
+        assert_eq!(scan.kept_back, 1);
+    }
+
+    #[test]
+    fn a_plan_with_nothing_to_do_is_empty() {
+        let plan = "Reading package lists...\nCalculating upgrade...\n\
+0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n";
+        assert_eq!(parse_upgrade_plan(plan), UpdateScan::default());
+    }
+
+    #[test]
+    fn a_normal_update_is_not_counted_as_security() {
+        let plan = "The following packages will be upgraded:\n  htop\n\
+1 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n\
+Inst htop [3.3.0-1] (3.4.0-1 Debian:13/stable [amd64])\n";
+        let scan = parse_upgrade_plan(plan);
+        assert_eq!(scan.upgrades, 1);
+        assert_eq!(scan.security, 0);
     }
 }

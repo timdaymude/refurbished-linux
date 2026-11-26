@@ -1,0 +1,46 @@
+# Reawakening OS boot menu.
+#
+# Read by GRUB's gfxmenu as a conventional theme: a dark desktop image, the
+# menu list, and a five-second progress bar for the countdown. Nothing here is
+# required for booting: if this file or the images are missing, GRUB prints
+# "failed to load theme" and falls back to its plain text menu, which is the
+# behaviour the images rely on as a safety net.
+#
+# Fonts are the ones GRUB itself ships (unicode.pf2), so the theme needs no
+# font files of its own and no font name that a future GRUB might rename.
+
+desktop-image: "background.png"
+desktop-color: "#14161b"
+title-text: ""
+terminal-font: "Unifont Regular 16"
+
++ boot_menu {
+    left = 20%
+    top = 40%
+    width = 60%
+    height = 40%
+    item_font = "Unifont Regular 16"
+    item_color = "#a7aebb"
+    selected_item_color = "#eceef2"
+    item_height = 34
+    item_padding = 10
+    item_spacing = 4
+    icon_width = 0
+    icon_height = 0
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = false
+}
+
++ progress_bar {
+    id = "__timeout__"
+    left = 20%
+    top = 84%
+    width = 60%
+    height = 6
+    bg_color = "#262b34"
+    fg_color = "#35c2a3"
+    border_color = "#17a08a"
+    text = "Booting in %d seconds"
+    text_color = "#737b8a"
+    font = "Unifont Regular 16"
+}

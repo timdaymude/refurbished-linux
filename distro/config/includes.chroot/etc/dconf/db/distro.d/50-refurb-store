@@ -1,0 +1,13 @@
+[org/gnome/software]
+# The store must never refresh, download or install anything on its own. These
+# are the keys GNOME Software reads before it decides to do exactly that.
+check-timestamps=false
+download-updates=false
+download-updates-notify=false
+allow-updates=false
+first-run=false
+
+[org/gnome/desktop/interface]
+# The store is a libadwaita application: this is the switch that gives it the
+# dark palette. GTK_THEME=Adwaita:dark in the session covers the rest.
+color-scheme='prefer-dark'

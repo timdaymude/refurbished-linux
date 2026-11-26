@@ -248,6 +248,58 @@ for code in 40 41 42 43 44; do
 done
 [ -z "$missing" ] && ok "hwdb maps the whole Chromebook top row" || err "hwdb is missing KEYBOARD_KEY_$missing"
 
+echo "== r16: one store, Flatpak first, and it does not stay running"
+if grep -q '^gnome-software$' "$DISTRO/config/package-lists/refurb-store.list.chroot" && \
+   grep -q '^gnome-software-plugin-flatpak$' "$DISTRO/config/package-lists/refurb-store.list.chroot" && \
+   grep -q '^flatpak$' "$DISTRO/config/package-lists/refurb-store.list.chroot" && \
+   ! grep -q '^dde-store$' "$DISTRO/config/package-lists/refurb-store.list.chroot"; then
+    ok "GNOME Software with the Flatpak backend, and no second store"
+else
+    err "the store package list does not describe one Flatpak-first store"
+fi
+if grep -q 'flathub.flatpakrepo' "$DISTRO/config/hooks/normal/0450-store.hook.chroot" && \
+   grep -q 'remote-add --system' "$DISTRO/config/hooks/normal/0450-store.hook.chroot"; then
+    ok "Flathub is configured system-wide by the build, not by the user"
+else
+    err "the build does not configure the Flathub remote"
+fi
+if grep -q 'disable gnome-software.service' "$DISTRO/config/hooks/normal/0450-store.hook.chroot" && \
+   grep -q 'apt-daily.timer' "$DISTRO/config/hooks/normal/0450-store.hook.chroot" && \
+   grep -q 'download-updates=false' "$INC/etc/dconf/db/distro.d/50-refurb-store"; then
+    ok "no background store service, no daily apt timer, no automatic downloads"
+else
+    err "the store can still start or download on its own"
+fi
+if grep -q 'DBusActivatable=false' "$INC/usr/local/share/applications/org.gnome.Software.desktop" && \
+   grep -q 'Name=App Store' "$INC/usr/local/share/applications/org.gnome.Software.desktop"; then
+    ok "the menu entry launches a normal process and is called App Store"
+else
+    err "the store's menu entry is not the one this image wants"
+fi
+
+if grep -q 'inotify' "$ROOT/shell/refurb-shell/Cargo.toml" && \
+   grep -q 'flatpak/exports/share/applications' "$ROOT/shell/refurb-shell/src/apps.rs" && \
+   grep -q 'AppsChanged' "$ROOT/shell/refurb-shell/src/session/mod.rs"; then
+    ok "the launcher watches desktop entries, including Flatpak's exports"
+else
+    err "the launcher would still need a reboot to see new software"
+fi
+
+if [ -f "$DISTRO/config/boot-theme/theme.txt" ] && \
+   [ -f "$DISTRO/config/boot-theme/background.png" ] && \
+   grep -q 'GRUB_THEME="/boot/grub/themes/reawakening/theme.txt"' "$INC/etc/default/grub" && \
+   grep -q 'boot-theme' "$ROOT/scripts/mkiso.sh"; then
+    ok "the boot theme exists and both the ISO and the installed menu use it"
+else
+    err "the boot theme is not wired into the image"
+fi
+if grep -q 'set theme=' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'if \[ -f ($root)/boot/grub/themes/reawakening/theme.txt \]' "$ROOT/scripts/mkiso.sh"; then
+    ok "GRUB keeps its text menu when the theme cannot be read"
+else
+    err "the graphical menu has no guarded fallback"
+fi
+
 echo "== no update daemon, packagekit or indexer is enabled"
 if grep -Rqs 'unattended-upgrades.service\|packagekit.service' "$DISTRO/config/hooks/normal/0200-no-background-work.hook.chroot"; then
     ok "masked in 0200-no-background-work"

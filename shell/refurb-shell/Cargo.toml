@@ -18,9 +18,15 @@ png = "0.17"
 # Session (Wayland) support. Optional so the UI can be built, tested and
 # rendered headlessly on machines without Wayland libraries.
 wayland-client = { version = "0.31", optional = true }
-wayland-protocols = { version = "0.31", features = ["client", "staging"], optional = true }
+# `unstable` carries cursor-shape-v1, which is how the shell asks for a
+# pointer shape instead of drawing one.
+wayland-protocols = { version = "0.31", features = ["client", "staging", "unstable"], optional = true }
 wayland-protocols-wlr = { version = "0.3", features = ["client"], optional = true }
 libloading = { version = "0.8", optional = true }
+
+# The launcher rescans when a desktop entry appears or disappears. inotify is
+# the kernel event source: no polling timer, one sleeping thread.
+inotify = "0.11"
 
 [features]
 default = ["session"]

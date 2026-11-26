@@ -48,4 +48,12 @@ rm -f /etc/resolv.conf
 # The installed system boots from its own initramfs, without live-boot.
 update-initramfs -u -k all
 
+# Rebuild the boot menu from the shipped /etc/default/grub, which is what puts
+# the Reawakening theme on the installed system's GRUB. Calamares may write the
+# menu through grub-install without reading the defaults, so this runs after
+# the bootloader job and produces the same menu the live medium shows.
+if command -v update-grub >/dev/null 2>&1; then
+    update-grub >/dev/null 2>&1 || echo "WARNING: update-grub failed" >&2
+fi
+
 exit 0

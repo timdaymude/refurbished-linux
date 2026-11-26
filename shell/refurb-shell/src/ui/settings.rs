@@ -136,18 +136,37 @@ fn updates(cx: &mut Ctx, pane: Rect) {
         pane,
         &mut y,
         "Reawakening OS does not run an update checker, an update notifier or a \
-         package catalogue service. Debian's own daily metadata refresh keeps the \
-         package lists current for a few seconds a day and then exits.",
+         package catalogue service. Debian's daily package-list refresh is \
+         switched off in this image, so nothing reaches the network unless you \
+         press Check, and nothing is installed unless you press Install.",
     );
     y += 8.0;
 
-    let (upgrades, security) = (st.status.updates, st.status.updates);
+    let (upgrades, security) = (st.status.updates, st.status.updates_security);
     if upgrades > 0 {
         let text = format!(
             "{upgrades} update{} available ({security} security)",
             if upgrades == 1 { "" } else { "s" }
         );
         cx.t(pane.x() + 20.0, y, 20.0, &text, theme::T_BODY, MEDIUM, theme::clay());
+        y += 22.0;
+        if st.status.updates_kept > 0 {
+            let text = format!(
+                "{} more need{} a new package and cannot be installed here.",
+                st.status.updates_kept,
+                if st.status.updates_kept == 1 { "s" } else { "" }
+            );
+            cx.t(
+                pane.x() + 20.0,
+                y,
+                16.0,
+                &text,
+                theme::T_SMALL,
+                REGULAR,
+                theme::ink_soft(),
+            );
+            y += 18.0;
+        }
     } else {
         cx.t(
             pane.x() + 20.0,

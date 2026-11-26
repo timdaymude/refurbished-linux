@@ -1,0 +1,15 @@
+# Reawakening OS boot menu.
+#
+# The theme file and its artwork live in /boot/grub/themes/reawakening and are
+# part of the image, not something the installer downloads. GRUB falls back to
+# its text menu by itself if the theme cannot be read, so a broken theme can
+# never make a machine unbootable.
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_TIMEOUT_STYLE=menu
+GRUB_DISTRIBUTOR="Reawakening OS"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
+GRUB_CMDLINE_LINUX=""
+GRUB_THEME="/boot/grub/themes/reawakening/theme.txt"
+GRUB_GFXMODE=auto
+GRUB_GFXPAYLOAD_LINUX=keep

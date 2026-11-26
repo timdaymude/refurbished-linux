@@ -212,7 +212,12 @@ pub struct Status {
     pub brightness: Option<f32>,
     /// True only when a backlight can actually be changed on this machine.
     pub backlight: bool,
+    /// Packages an upgrade would install, and how many come from the security
+    /// archive. Kept apart: the panel used to print the security count twice.
     pub updates: u32,
+    pub updates_security: u32,
+    /// Packages APT will not upgrade without a new package (held back).
+    pub updates_kept: u32,
     pub hostname: String,
     pub mem_total_mb: u64,
     pub mem_available_mb: u64,
@@ -385,7 +390,10 @@ pub fn read_status() -> Status {
     status.battery = system::battery();
     status.brightness = system::brightness();
     status.backlight = system::brightness_available();
-    status.updates = system::cached_update_count();
+    let (total, security, kept) = system::cached_update_counts();
+    status.updates = total;
+    status.updates_security = security;
+    status.updates_kept = kept;
     status.hostname = system::hostname();
     if let Some(m) = system::memory() {
         status.mem_total_mb = m.total_mb;

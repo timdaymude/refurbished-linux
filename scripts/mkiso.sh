@@ -188,6 +188,12 @@ stage_configure() {
     install -m 644 "$ROOT/assets/wallpapers/reawakening-default.png" \
                    "$ROOT/assets/wallpapers/reawakening-moonlight.png" \
                    "$ROOTFS/usr/share/backgrounds/reawakening/"
+
+    # The boot menu theme. The installed system gets the same files the live
+    # ISO uses, at the path /etc/default/grub points to, so one artwork and one
+    # theme.txt serve both. Rendered by scripts/make-boot-theme.py.
+    install -d "$ROOTFS/boot/grub/themes/reawakening"
+    cp -a "$DISTRO/config/boot-theme/." "$ROOTFS/boot/grub/themes/reawakening/"
     install -d "$ROOTFS/tmp/debs"
     cp "$DISTRO"/config/packages.chroot/*.deb "$ROOTFS/tmp/debs/"
 
@@ -308,13 +314,35 @@ stage_iso() {
         [ -f "$SYSLINUX_DIR/$f" ] && cp "$SYSLINUX_DIR/$f" "$ISODIR/isolinux/"
     done
 
+    # The BIOS menu is drawn by syslinux's graphical menu when its module is
+    # present, and by the plain text menu when it is not: the image must boot
+    # either way, so the module choice is made here, not assumed.
+    MENU_UI=menu.c32
+    [ -f "$SYSLINUX_DIR/vesamenu.c32" ] && MENU_UI=vesamenu.c32
+
+    install -d "$ISODIR/boot-theme"
+    cp "$DISTRO/config/boot-theme/isolinux.png" "$ISODIR/boot-theme/"
+
     cat > "$ISODIR/isolinux/isolinux.cfg" <<'EOF'
-UI menu.c32
+UI __MENU_UI__
 PROMPT 0
-TIMEOUT 30
+TIMEOUT 50
 DEFAULT live
 
-MENU TITLE Reawakening OS 0.3 - desktop
+MENU RESOLUTION 1024 768
+MENU BACKGROUND /boot-theme/isolinux.png
+MENU TITLE
+MENU MARGIN 12
+MENU ROWS 6
+MENU COLOR border 30;44 #00000000 #00000000 none
+MENU COLOR title 1;36;44 #ff35c2a3 #00000000 none
+MENU COLOR sel 7;37;40 #ffeceef2 #3a2320 none
+MENU COLOR unsel 37;40 #ffa7aebb #00000000 none
+MENU COLOR hotkey 1;37;44 #ffe8835c #00000000 none
+MENU COLOR help 37;40 #ff737b8a #00000000 none
+MENU COLOR timeout_msg 37;40 #ff737b8a #00000000 none
+MENU COLOR timeout 1;37;40 #ffe8835c #00000000 none
+MENU COLOR screen 37;40 #00000000 #00000000 none
 
 LABEL live
   MENU LABEL Start Reawakening OS
@@ -333,10 +361,12 @@ LABEL live-diag
 
 EOF
 
+    sed -i "s|^UI __MENU_UI__|UI $MENU_UI|" "$ISODIR/isolinux/isolinux.cfg"
+
     # Testing hooks, off by default so the release menu is exactly as shipped:
     #   MENU_TIMEOUT=100      longer menu (lets a test send key presses)
     #   BOOT_EXTRA="..."      extra kernel args on the default entry
-    sed -i "s|^TIMEOUT 30|TIMEOUT ${MENU_TIMEOUT:-30}|" "$ISODIR/isolinux/isolinux.cfg"
+    sed -i "s|^TIMEOUT 50|TIMEOUT ${MENU_TIMEOUT:-50}|" "$ISODIR/isolinux/isolinux.cfg"
     if [ -n "${BOOT_EXTRA:-}" ]; then
         # A test boot wants the messages, so quiet goes away entirely.
         sed -i "s|quiet splash|${BOOT_EXTRA}|" "$ISODIR/isolinux/isolinux.cfg"
@@ -357,9 +387,23 @@ EOF
         # Note: GRUB's script language has no ${VAR:-default} expansion, so
         # nothing here may use shell parameter syntax; BOOT_EXTRA, MENU_TIMEOUT
         # and the test title are patched in with sed below, as for syslinux.
+        # The graphical theme is drawn by gfxterm, which needs a font: the
+        # console font GRUB ships is embedded in the image below, so no file
+        # outside the ISO is ever required for the menu to appear.
+        install -d "$ISODIR/boot/grub/themes/reawakening"
+        cp -a "$DISTRO/config/boot-theme/." "$ISODIR/boot/grub/themes/reawakening/"
+
         cat > "$WORK/grub-efi.cfg" <<'EOF'
-set timeout=3
+set timeout=5
 set default=0
+
+insmod all_video
+insmod gfxterm
+insmod gfxmenu
+insmod png
+set gfxmode=auto,1920x1080,1024x768
+loadfont ($prefix)/fonts/unicode.pf2
+terminal_output gfxterm
 
 # GRUB starts with $root on the device it was loaded from. On UEFI that is the
 # 10 MB FAT image carrying this binary (label REFURBEFI), which never contains
@@ -383,6 +427,14 @@ if [ "$live_found" = 0 ]; then
     fi
 fi
 
+# The theme is applied only after the medium is found, and only if the file is
+# there: a missing theme prints one error and leaves GRUB's plain text menu,
+# which still boots the machine. That is the fallback, on purpose.
+if [ -f ($root)/boot/grub/themes/reawakening/theme.txt ]; then
+    set theme=($root)/boot/grub/themes/reawakening/theme.txt
+    export theme
+fi
+
 menuentry "Start Reawakening OS" {
     linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
     initrd ($root)/live/initrd.img
@@ -396,7 +448,7 @@ menuentry "Memory report (support / benchmark boot)" {
     initrd ($root)/live/initrd.img
 }
 EOF
-        sed -i "s|^set timeout=3|set timeout=${MENU_TIMEOUT:-3}|" "$WORK/grub-efi.cfg"
+        sed -i "s|^set timeout=5|set timeout=${MENU_TIMEOUT:-5}|" "$WORK/grub-efi.cfg"
         if [ -n "${BOOT_EXTRA:-}" ]; then
             sed -i "s|quiet splash|${BOOT_EXTRA}|" "$WORK/grub-efi.cfg"
         fi
@@ -407,8 +459,8 @@ EOF
         # search_label: the --file and --label forms used above (plain
         # "search" alone only offers --fs-uuid).
         grub-mkstandalone --directory "$GRUB_MOD" -O x86_64-efi \
-            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm" \
-            --locales="" --fonts="" --themes="" \
+            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm gfxmenu png font gfxterm_background" \
+            --locales="" --fonts="unicode" --themes="" \
             --output="$WORK/bootx64.efi" \
             "boot/grub/grub.cfg=$WORK/grub-efi.cfg" || echo "grub-mkstandalone failed: BIOS-only ISO" >&2
     fi

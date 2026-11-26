@@ -1,0 +1,4 @@
+# Reawakening OS: a system default database on top of the user's own settings,
+# so store and appearance defaults reach every account without a login script.
+user-db:user
+system-db:distro

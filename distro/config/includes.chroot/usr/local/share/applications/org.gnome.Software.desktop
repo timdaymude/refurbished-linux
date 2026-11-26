@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=App Store
+GenericName=Software Store
+Comment=Install applications from Flathub and Debian, without a terminal
+Exec=gnome-software --mode=overview
+Icon=org.gnome.Software
+Terminal=false
+Categories=System;PackageManager;
+Keywords=software;store;app;install;flatpak;debian;
+StartupNotify=true
+# Not a D-Bus service on purpose. The stock entry asks for a resident service
+# so the store can be found from search providers; this image wants the store
+# to exist only while its window does, so a plain launch starts a process that
+# exits when it is closed.
+DBusActivatable=false
+X-GNOME-UsesNotifications=false

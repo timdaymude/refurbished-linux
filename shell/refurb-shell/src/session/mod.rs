@@ -22,6 +22,9 @@ use wayland_client::protocol::{
     wl_shm_pool, wl_surface,
 };
 use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
+use wayland_protocols::wp::cursor_shape::v1::client::{
+    wp_cursor_shape_device_v1, wp_cursor_shape_manager_v1,
+};
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols_wlr::foreign_toplevel::v1::client::{
     zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
@@ -147,7 +150,10 @@ enum Msg {
     ConnectSaved(String, Result<(), String>),
     Bluetooth(Vec<system::BtDevice>),
     Log(String),
-    Updates(Result<(u32, u32), String>),
+    Updates(Result<system::UpdateScan, String>),
+    /// A recount made without touching the network, used when the Updates panel
+    /// opens so a number from an earlier session cannot outlive its updates.
+    UpdatesRecount(Result<system::UpdateScan, String>),
     Displays(Vec<ui::DisplayOutput>),
     /// Cockpit's state, re-read after the panel opened or after a change. The
     /// second field is the line to show: what changed, or why it did not.
@@ -160,6 +166,10 @@ enum Msg {
     VolumeApplied(Result<(f32, bool), String>),
     /// The backlight's real level after the change, or why it did not change.
     BrightnessApplied(Result<f32, String>),
+    /// A desktop entry appeared or disappeared. The catalogue is rescanned so
+    /// an installed application is in the launcher while the store is still
+    /// open, and a removed one leaves it.
+    AppsChanged,
 }
 
 pub struct Session {
@@ -175,6 +185,14 @@ pub struct Session {
     seat: Option<wl_seat::WlSeat>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     pointer: Option<wl_pointer::WlPointer>,
+    /// cursor-shape-v1. The shell draws no pointer of its own, so before this
+    /// existed a shape a window had asked for (an I-beam, a resize arrow) could
+    /// outlive the window: once it closed, nothing told the compositor to go
+    /// back to an arrow, and the wrong cursor stayed on screen.
+    cursor_shape: Option<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
+    cursor_device: Option<wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    /// The last serial a pointer event carried: set_shape needs one.
+    pointer_serial: u32,
     keymap: Keymap,
     modifiers: Modifiers,
     app: App,
@@ -283,6 +301,14 @@ pub fn run() -> Result<(), String> {
     // The desktop exists before the first frame, so a file already in
     // ~/Desktop is on screen as soon as the wallpaper is.
     let mut app = App::new();
+    // Application installs and removals reach the launcher through inotify, not
+    // through a reboot and not through a timer.
+    {
+        let tx = tx.clone();
+        crate::apps::watch(move || {
+            let _ = tx.send(Msg::AppsChanged);
+        });
+    }
     desk::ensure_dir();
     desk::refresh(&mut app.st.desk, true);
     // The taskbar belongs along the bottom edge of every screen, which is what
@@ -295,6 +321,11 @@ pub fn run() -> Result<(), String> {
     // list when it has not arrived yet. Done before the globals are moved into
     // the session, which keeps the registry snapshot for later reconciliation.
     let seat = globals.bind::<wl_seat::WlSeat, _, _>(&qh, 1..=7, ()).ok();
+    // Optional: labwc implements cursor-shape-v1. On a compositor without it
+    // the shell simply never asks for a shape, which is the old behaviour.
+    let cursor_shape = globals
+        .bind::<wp_cursor_shape_manager_v1::WpCursorShapeManagerV1, _, _>(&qh, 1..=1, ())
+        .ok();
     let mut session = Session {
         conn,
         qh: qh.clone(),
@@ -306,6 +337,9 @@ pub fn run() -> Result<(), String> {
         seat: None,
         keyboard: None,
         pointer: None,
+        cursor_shape,
+        cursor_device: None,
+        pointer_serial: 0,
         keymap: Keymap::fallback(),
         modifiers: Modifiers::default(),
         app,
@@ -1349,6 +1383,9 @@ impl Session {
                 if section == Section::Remote {
                     self.spawn_remote();
                 }
+                if section == Section::Updates {
+                    self.spawn_update_recount();
+                }
             }
             Action::Wallpaper(index) => {
                 // The pixels are already decoded and cached, so the repaint at
@@ -1582,6 +1619,23 @@ impl Session {
         });
     }
 
+    /// Put a scan's numbers on the panel. One place, so the bar, the panel and
+    /// the cache file cannot disagree about what "available" means.
+    fn apply_update_scan(&mut self, scan: system::UpdateScan) {
+        self.app.st.status.updates = scan.upgrades;
+        self.app.st.status.updates_security = scan.security;
+        self.app.st.status.updates_kept = scan.kept_back;
+    }
+
+    /// Recount what is pending without refreshing the lists: no network, no
+    /// password, a fraction of a second.
+    fn spawn_update_recount(&mut self) {
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::UpdatesRecount(system::count_upgrades()));
+        });
+    }
+
     fn spawn_update(&mut self, install: bool) {
         self.app.st.updates_note.clear();
         self.app
@@ -1611,7 +1665,9 @@ impl Session {
                         }
                         let ok = child.wait().map(|s| s.success()).unwrap_or(false);
                         let _ = tx.send(Msg::Updates(if ok {
-                            Ok((0, 0))
+                            // Count again after installing: "0 updates" is a
+                            // result, not an assumption.
+                            Ok(system::count_upgrades().unwrap_or_default())
                         } else {
                             Err("Update installation failed.".into())
                         }));
@@ -1684,21 +1740,43 @@ impl Session {
                 self.app.st.bt.devices = devices;
                 self.app.st.bt.scanning = false;
             }
+            Msg::AppsChanged => {
+                self.app.reload_apps();
+                // Every surface may show the catalogue: repaint them all.
+                for entry in &self.surfaces {
+                    if !self.dirty.contains(&entry.id) {
+                        self.dirty.push(entry.id);
+                    }
+                }
+            }
             Msg::Log(line) => {
                 if self.app.st.updates_note.len() < 60 {
                     self.app.st.updates_note.push(line);
                 }
             }
             Msg::Updates(result) => match result {
-                Ok((upgrades, security)) => {
-                    self.app.st.status.updates = security;
-                    self.app.st.updates_note.push(format!(
-                        "{upgrades} package updates available ({security} security)."
-                    ));
+                Ok(scan) => {
+                    self.apply_update_scan(scan);
+                    let mut note = format!(
+                        "{} package updates available ({} security).",
+                        scan.upgrades, scan.security
+                    );
+                    if scan.kept_back > 0 {
+                        note.push_str(&format!(
+                            " {} held back by APT.",
+                            scan.kept_back
+                        ));
+                    }
+                    self.app.st.updates_note.push(note);
                     self.spawn_status_refresh();
                 }
                 Err(error) => self.app.st.updates_note.push(error),
             },
+            Msg::UpdatesRecount(result) => {
+                if let Ok(scan) = result {
+                    self.apply_update_scan(scan);
+                }
+            }
             Msg::Displays(displays) => {
                 self.app.st.display.outputs = displays;
                 self.app.st.display.selected = 0;
@@ -1936,6 +2014,26 @@ impl Session {
                 // matched against the expanded layout instead of the old one.
                 self.sync_panels();
             }
+        }
+    }
+
+    /// Ask for the plain arrow. Only ever applied to the shell's own surfaces
+    /// (enter) or when the window that owned the pointer is gone, so a text
+    /// field still gets its I-beam and a window edge still gets its resize
+    /// arrow: those are shapes a client asks for while it is there.
+    fn show_arrow_cursor(&mut self, serial: u32) {
+        if serial == 0 {
+            return;
+        }
+        let (Some(manager), Some(pointer)) = (self.cursor_shape.as_ref(), self.pointer.as_ref())
+        else {
+            return;
+        };
+        if self.cursor_device.is_none() {
+            self.cursor_device = Some(manager.get_pointer(pointer, &self.qh, ()));
+        }
+        if let Some(device) = self.cursor_device.as_ref() {
+            device.set_shape(serial, wp_cursor_shape_device_v1::Shape::Default);
         }
     }
 
@@ -2355,6 +2453,8 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Session {
 }
 
 delegate_noop!(Session: ignore wl_compositor::WlCompositor);
+delegate_noop!(Session: ignore wp_cursor_shape_manager_v1::WpCursorShapeManagerV1);
+delegate_noop!(Session: ignore wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
 delegate_noop!(Session: ignore wl_shm::WlShm);
 delegate_noop!(Session: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(Session: ignore wl_output::WlOutput);
@@ -2604,11 +2704,17 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Session {
     ) {
         match event {
             wl_pointer::Event::Enter {
+                serial,
                 surface,
                 surface_x,
                 surface_y,
                 ..
             } => {
+                session.pointer_serial = serial;
+                // Entering the shell's own surfaces is the moment to put the
+                // arrow back: whatever shape the window we left had asked for
+                // ends here.
+                session.show_arrow_cursor(serial);
                 session.pointer_focus = surface.data::<Surface>().copied();
                 session.on_pointer_motion((surface_x, surface_y));
             }
@@ -2632,6 +2738,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Session {
                 state,
                 ..
             } if button == 0x110 || button == 0x111 => {
+                session.pointer_serial = serial;
+                // (The click serial is the freshest one for a later set_shape.)
+                let _ = serial;
                 // BTN_LEFT and BTN_RIGHT. The right button is only used for the
                 // desktop's context menu.
                 let pressed = matches!(state, WEnum::Value(wl_pointer::ButtonState::Pressed));
@@ -2683,6 +2792,7 @@ impl Dispatch<zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1, ()> 
     ) {
         let id = proxy.id().protocol_id();
         let mut sync = false;
+        let mut closed = false;
         {
             let Some(entry) = session
                 .toplevels
@@ -2699,6 +2809,7 @@ impl Dispatch<zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1, ()> 
                 }
                 zwlr_foreign_toplevel_handle_v1::Event::Closed => {
                     entry.closed = true;
+                    closed = true;
                     // A closed window is removed from the taskbar immediately.
                     // Waiting for a later `Done` left the entry of a destroyed
                     // window in the bar until something else happened.
@@ -2710,6 +2821,21 @@ impl Dispatch<zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1, ()> 
         }
         if sync {
             session.sync_toplevels();
+        }
+        // The moment a store window closes is the moment its install finished.
+        // Rescan here as well as in the watcher, so a changed catalogue still
+        // reaches the launcher on a filesystem that reports no inotify events.
+        if closed {
+            // The window under the pointer is gone; without this the shape it
+            // asked for last (an I-beam, a resize arrow) stayed on screen.
+            let serial = session.pointer_serial;
+            session.show_arrow_cursor(serial);
+            session.app.reload_apps();
+            for entry in &session.surfaces {
+                if !session.dirty.contains(&entry.id) {
+                    session.dirty.push(entry.id);
+                }
+            }
         }
     }
 }

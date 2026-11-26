@@ -2,8 +2,9 @@
 //!
 //! The shell does not own an application database: it reads freedesktop
 //! `.desktop` entries, which is what the software manager, the file manager
-//! and every installed package already agree on. Scanning happens once at
-//! session start and when a window closes; there is no indexer and no watcher.
+//! and every installed package already agree on. There is no indexer; a rescan
+//! happens at session start and whenever a watched directory changes, so an
+//! application installed from the store appears in the launcher at once.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -30,20 +31,100 @@ pub struct App {
 }
 
 fn dirs() -> Vec<PathBuf> {
+    dirs_from(
+        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+        &std::env::var("XDG_DATA_DIRS")
+            .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string()),
+    )
+}
+
+/// The same list, with every input made explicit so it can be tested.
+///
+/// Flatpak does not export its desktop entries through `XDG_DATA_DIRS`: a
+/// system-wide install writes them to `/var/lib/flatpak/exports/share` and a
+/// per-user install to `~/.local/share/flatpak/exports/share`. Without those
+/// two paths an application installed from the store is on disk and starts
+/// from its own entry, but the launcher never shows it — which is exactly the
+/// "it only appears after a reboot" report, because the reboot is what finally
+/// rebuilt a list that had never looked there.
+pub(crate) fn dirs_from(
+    data_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+    data_dirs: &str,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Some(data_home) = std::env::var_os("XDG_DATA_HOME") {
-        out.push(PathBuf::from(data_home).join("applications"));
-    } else if let Some(home) = std::env::var_os("HOME") {
-        out.push(PathBuf::from(home).join(".local/share/applications"));
+    let local = data_home.or_else(|| home.map(|h| h.join(".local/share")));
+    if let Some(local) = local {
+        out.push(local.join("applications"));
+        // Per-user Flatpak installs.
+        out.push(local.join("flatpak/exports/share/applications"));
     }
-    let data_dirs = std::env::var("XDG_DATA_DIRS")
-        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
     for d in data_dirs.split(':') {
         if !d.is_empty() {
             out.push(PathBuf::from(d).join("applications"));
         }
     }
+    // System-wide Flatpak installs.
+    out.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
     out
+}
+
+/// Rescan when the catalogue changes. `inotify` is the kernel's own event
+/// source: the thread blocks until a desktop entry is created, removed or
+/// rewritten and then calls `notify`. Nothing runs on a timer, and the cost is
+/// one sleeping thread that wakes only when software is installed or removed.
+pub fn watch(notify: impl Fn() + Send + 'static) {
+    use std::time::Duration;
+
+    std::thread::spawn(move || {
+        use inotify::{Inotify, WatchMask};
+
+        let Ok(mut inotify) = Inotify::init() else {
+            return;
+        };
+        let mask = WatchMask::CREATE
+            | WatchMask::DELETE
+            | WatchMask::MOVED_TO
+            | WatchMask::MOVED_FROM
+            | WatchMask::CLOSE_WRITE;
+        let mut watched = 0usize;
+        for dir in dirs() {
+            if dir.is_dir() && inotify.watches().add(&dir, mask).is_ok() {
+                watched += 1;
+            }
+        }
+        if watched == 0 {
+            return;
+        }
+        let mut buffer = [0u8; 8192];
+        loop {
+            match inotify.read_events_blocking(&mut buffer) {
+                Ok(events) => {
+                    if events.into_iter().next().is_some() {
+                        // One install writes several files; coalesce them into a
+                        // single rescan.
+                        std::thread::sleep(Duration::from_millis(250));
+                        notify();
+                        buffer = [0u8; 8192];
+                    }
+                }
+                // A watched directory disappeared (package removal). Rebuild the
+                // watch set once and carry on; never spin.
+                Err(_) => {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if let Ok(mut fresh) = Inotify::init() {
+                        for dir in dirs() {
+                            if dir.is_dir() {
+                                let _ = fresh.watches().add(&dir, mask);
+                            }
+                        }
+                        inotify = fresh;
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Read every visible application, first definition wins (user dirs first).
@@ -329,6 +410,35 @@ mod tests {
     const M365: &str = "[Desktop Entry]\nType=Application\nName=Microsoft 365\nComment=Word, Excel and PowerPoint on the web\nExec=brave-browser --new-window https://www.office.com\nX-Refurb-Web=https://www.office.com\nX-Refurb-Pin=7\nX-Refurb-Group=web\n";
 
     const HIDDEN: &str = "[Desktop Entry]\nType=Application\nName=Hide me\nExec=foo\nNoDisplay=true\n";
+
+    #[test]
+    fn flatpak_exports_are_part_of_the_catalogue() {
+        let dirs = dirs_from(
+            Some(PathBuf::from("/home/u/.local/share")),
+            None,
+            "/usr/share",
+        );
+        assert!(dirs.contains(&PathBuf::from(
+            "/home/u/.local/share/flatpak/exports/share/applications"
+        )));
+        assert!(dirs.contains(&PathBuf::from(
+            "/var/lib/flatpak/exports/share/applications"
+        )));
+        // The plain data directory still comes first, so a user override of an
+        // installed application keeps winning.
+        assert_eq!(dirs[0], PathBuf::from("/home/u/.local/share/applications"));
+    }
+
+    #[test]
+    fn a_flatpak_entry_matches_its_own_window() {
+        let vlc = parse_desktop(
+            "org.videolan.VLC",
+            "[Desktop Entry]\nName=VLC media player\nExec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=vlc org.videolan.VLC\nIcon=org.videolan.VLC\n",
+        )
+        .unwrap();
+        assert!(matches_toplevel(&vlc, "org.videolan.VLC"));
+        assert!(!matches_toplevel(&vlc, "vlc"));
+    }
 
     #[test]
     fn parses_a_normal_entry() {

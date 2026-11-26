@@ -263,6 +263,12 @@ if grep -q 'flathub.flatpakrepo' "$DISTRO/config/hooks/normal/0450-store.hook.ch
 else
     err "the build does not configure the Flathub remote"
 fi
+if grep -q 'remote-add --system --if-not-exists --from flathub' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'flatpak update --appstream' "$ROOT/scripts/mkiso.sh"; then
+    ok "the image ships an initialised flatpak repository and the Flathub catalogue"
+else
+    err "flatpak would reach first boot with no repository or no catalogue"
+fi
 if grep -q 'disable gnome-software.service' "$DISTRO/config/hooks/normal/0450-store.hook.chroot" && \
    grep -q 'apt-daily.timer' "$DISTRO/config/hooks/normal/0450-store.hook.chroot" && \
    grep -q 'download-updates=false' "$INC/etc/dconf/db/distro.d/50-refurb-store"; then

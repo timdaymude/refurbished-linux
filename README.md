@@ -42,7 +42,29 @@ icons, its own font, its own interaction model — running on top of the tiny
 
 **Verified**
 
-- `reawakening-os-0.3.0-r15-amd64.iso` builds end to end and is
+- `reawakening-os-0.3.0-r16-amd64.iso` builds end to end and is
+  **1,237,876,736 bytes** with SHA256
+  (`2fb11d141a2d8d3354dd99acdc58b3c539513e54591a4a6249898534b55554e3`). r16
+  replaces DDE Store with **GNOME Software 48.3** and its Flatpak plugin, with
+  the Flathub remote and the whole Flathub catalogue shipped in the image: dark,
+  Flatpak-first, APT still underneath, and nothing left running when the window
+  closes. The launcher now notices software installed while the session is
+  running — APT or Flatpak, through an inotify watch on the desktop-entry
+  directories including Flatpak's exports — so VLC appears without a reboot.
+  The boot menus are a branded dark GRUB and syslinux theme with a five-second
+  countdown and a text fallback, the shell asks for the default pointer when it
+  gains a surface and when a window closes, and Settings → Updates reports real
+  totals, real security counts and held-back packages, recounting after every
+  install. Verified from the shipped ISO in QEMU: the themed UEFI menu renders;
+  the store opens from the launcher tile and searches Flathub; `galculator`
+  installed mid-session appears in the launcher immediately; 3 security updates
+  were reported, installed and then shown as 0; closing the store leaves no
+  process and idle memory returns to 759 MB of 1,931 MB; no apt-daily timer
+  exists. Not yet verified: a full Calamares install, a Flatpak installed
+  through the store's button, cursor shapes, and anything on real hardware —
+  see `docs/round-16.md`.
+
+- `reawakening-os-0.3.0-r15-amd64.iso` (previous release) builds end to end and is
   **1,187,692,544 bytes** with SHA256
   (`21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3`). r15 adds
   **DDE Store** as the graphical application store, and repairs Cockpit's remote

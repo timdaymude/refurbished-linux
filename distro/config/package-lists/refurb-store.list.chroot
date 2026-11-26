@@ -16,6 +16,9 @@ gnome-software-plugin-flatpak
 # flatpak itself, plus the D-Bus activated flatpak-system-helper that performs
 # a system-wide install after polkit says yes. No daemon runs at boot.
 flatpak
+# dconf-cli provides `dconf update`, the only way to compile the system default
+# database that switches the store's automatic downloads off. 60 KiB.
+dconf-cli
 # Portals: Flatpak applications need xdg-desktop-portal for file dialogs and
 # settings. The GTK backend is the one that works under labwc; it is a D-Bus
 # service, started on demand and gone when idle.

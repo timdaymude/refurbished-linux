@@ -72,17 +72,18 @@ mv /tmp/apt-lists-guard /var/lib/apt/lists 2>/dev/null || true
 # The remote is configured once, here, so a beginner never types a command.
 # No runtime is preinstalled: a runtime arrives with the first application that
 # needs it, which keeps the image small and lets the user see the cost.
-if flatpak remote-add --system --if-not-exists flathub \
-        https://flathub.org/repo/flathub.flatpakrepo >/tmp/flathub.log 2>&1; then
-    echo "Flatpak: flathub remote configured"
+# Flathub is shipped as a *static remote*: the .flatpakrepo file below is part
+# of includes.chroot, and flatpak reads /etc/flatpak/remotes.d/ without a
+# network fetch. That is exactly how distributions ship a default remote, and it
+# keeps the image build offline-safe: an earlier attempt with
+# "flatpak remote-add --system" needed DNS and /proc inside the chroot, and
+# failed on both.
+install -d /var/lib/flatpak
+if [ -f /etc/flatpak/remotes.d/flathub.flatpakrepo ]; then
+    echo "Flatpak: static flathub remote shipped"
 else
-    echo "WARNING: could not add the flathub remote" >&2
-    tail -5 /tmp/flathub.log >&2 || true
+    echo "WARNING: /etc/flatpak/remotes.d/flathub.flatpakrepo is missing" >&2
 fi
-# Filter the remote to the architecture and languages this image uses: the
-# alternative would download every translation of every runtime.
-flatpak config --system --set languages="en" >/dev/null 2>&1 || true
-
 # ---------------------------------------------------------------------------
 # 4. No background store, no background update checks
 # ---------------------------------------------------------------------------
@@ -115,15 +116,17 @@ if dpkg-query -W -f='${Status}' gnome-software 2>/dev/null | grep -q "install ok
 else
     echo "WARNING: gnome-software is not installed" >&2
 fi
-if [ -f /usr/lib/x86_64-linux-gnu/gnome-software/plugins/libgs_plugin_flatpak.so ]; then
+# The plugin directory carries a GNOME Software ABI suffix (plugins-22 on
+# trixie), so it is matched rather than named.
+if ls /usr/lib/*/gnome-software/plugins-*/libgs_plugin_flatpak.so >/dev/null 2>&1; then
     echo "Store: Flatpak plugin present"
 else
     echo "WARNING: the Flatpak plugin for gnome-software is missing" >&2
 fi
-if flatpak remotes --system 2>/dev/null | grep -q '^flathub'; then
-    echo "Store: flathub remote visible to flatpak"
+if grep -q '^Url=https://dl.flathub.org/repo/' /etc/flatpak/remotes.d/flathub.flatpakrepo; then
+    echo "Store: flathub remote points at dl.flathub.org"
 else
-    echo "WARNING: flatpak does not list the flathub remote" >&2
+    echo "WARNING: the flathub remote file is not what this image expects" >&2
 fi
 if dpkg-query -W -f='${Status}' dde-store 2>/dev/null | grep -q "install ok installed"; then
     echo "WARNING: dde-store is still installed; one store only" >&2

@@ -189,6 +189,42 @@ OS. It is ordered by how much it could hurt.
   exercise the wizard, the partitioning, the bootloader module and the target
   system, but not the machine's firmware, its eMMC and its USB behaviour.
 
+## Round 16 additions
+
+- **The store is heavier than the 10 MiB target while it is open.** GNOME
+  Software held 456,164 KiB resident with both catalogues loaded (Debian's
+  AppStream pool and Flathub's 52 MB appstream) on a 2 GB guest, and it spent
+  72 % CPU drawing on TCG. Nothing of it runs when the window is closed — no
+  process, no helper, no daemon, and no boot start — so the idle budget is
+  unchanged. On Craig, close the store when finished, exactly as with r15's
+  DDE Store (257,520 KiB). A lighter store would mean writing one.
+- **The Flathub catalogue is baked into the image.** That is 112 MB unpacked
+  and about 60 MB compressed — the reason the ISO grew from 1,187,692,544 to
+  1,237,876,736 bytes. The alternative, downloading it on first use, fails on
+  the live medium (flatpak will not leave less than 500 MB free on the overlay)
+  and leaves the store empty without a network.
+- **A Flatpak cannot be installed from the live medium.** Same 500 MB
+  free-space guard: a typical Flathub application plus its runtime needs several
+  hundred megabytes. Installing from the installed system is unaffected. APT
+  installation from the store is unaffected too.
+- **The store's Install and Uninstall buttons were not exercised this round.**
+  They exist and the polkit agent is present, but no Flatpak was installed
+  through the interface, and the APT path was not repeated after the store
+  changed. Everything else about the store was checked by hand.
+- **The installed system's boot menu was not re-tested.** `calamares-finalize`
+  now runs `update-grub` so the installed GRUB reads the shipped
+  `/etc/default/grub` and uses the theme, and the theme files sit in the
+  filesystem Calamares copies. That is reasoning, not a test: the round ran out
+  of time before a full install to disk.
+- **Cursor shapes are code-verified only.** The shell binds `cursor-shape-v1`
+  and asks for `default` when the pointer enters a shell surface and when a
+  toplevel closes. A pointer survives the store closing in QEMU, but the
+  I-beam-after-a-text-field and stuck-resize-arrow cases need a real pointer,
+  which a VNC capture cannot show.
+- **Nothing was tested on real hardware.** Wi-Fi, Bluetooth, audio, Cockpit,
+  Brave, Jellyfin and the Chromebook's 2 GB limit are all still the owner's
+  tests to run, as they were in r15.
+
 ## Round 15 additions
 
 - **The store is heavy while it is open.** `dde-store` held 257,520 KiB

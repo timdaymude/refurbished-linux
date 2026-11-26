@@ -167,6 +167,12 @@ stage_configure() {
     [ -f "$DISTRO/config/packages.chroot/refurb-shell_${VERSION}_amd64.deb" ] || \
         "$ROOT/scripts/build-shell.sh"
 
+    # The package stage removed the resolver with the rest of the live-only
+    # files, but the store hook refreshes the AppStream catalogue from the
+    # archive. Give the chroot a working resolver for as long as it is built,
+    # and take it out again at the end, where the live system replaces it.
+    cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf" 2>/dev/null || true
+
     # An earlier build may have shipped read-only files (sudoers.d is 0440);
     # as the unprivileged build user that makes this copy fail and silently
     # skips every hook after it. Make the tree writable for its owner first.
@@ -194,6 +200,9 @@ stage_configure() {
     # theme.txt serve both. Rendered by scripts/make-boot-theme.py.
     install -d "$ROOTFS/boot/grub/themes/reawakening"
     cp -a "$DISTRO/config/boot-theme/." "$ROOTFS/boot/grub/themes/reawakening/"
+    # Replace rather than add: a package removed from packages.chroot must not
+    # survive in the image because an earlier build left its .deb in /tmp.
+    rm -rf "$ROOTFS/tmp/debs"
     install -d "$ROOTFS/tmp/debs"
     cp "$DISTRO"/config/packages.chroot/*.deb "$ROOTFS/tmp/debs/"
 
@@ -240,6 +249,23 @@ stage_configure() {
         echo 'MODULES=most' > /etc/initramfs-tools/conf.d/refurb.conf
         update-initramfs -u -k all
     "
+
+    # flatpak refuses to create its repository without
+    # /proc/sys/kernel/random/boot_id, and the hook above runs inside a chroot
+    # that has no /proc. Do it here, in a namespace that has both, from the
+    # remote file the image already ships: no network, no DNS, no /proc in the
+    # chroot.
+    as_root bash -c "mount -t proc proc '$ROOTFS/proc' 2>/dev/null || true; chroot '$ROOTFS' flatpak remote-add --system --if-not-exists --from flathub /etc/flatpak/remotes.d/flathub.flatpakrepo" \
+        || echo "WARNING: the flatpak repository was not initialised" >&2
+
+    # Flathub's catalogue (appstream) is downloaded once, here, and shipped. The
+    # alternative is a first-run download of 52 MB from inside the store, which
+    # a 2 GB live session cannot even do (flatpak refuses to leave less than
+    # 500 MB free on the overlay), and which leaves the store empty on a machine
+    # with no network. Baking it means browsing works immediately and offline;
+    # it costs about 30 MB in the compressed image.
+    as_root bash -c "mount -t proc proc '$ROOTFS/proc' 2>/dev/null || true; chroot '$ROOTFS' flatpak update --appstream" \
+        || echo "WARNING: the Flathub catalogue was not downloaded" >&2
 
     # Placeholder for a machine-specific installation tool; see docs/install.md.
     rm -f "$ROOTFS/usr/sbin/policy-rc.d" "$ROOTFS/etc/apt/apt.conf.d/99-build-chroot"

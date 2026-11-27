@@ -16,6 +16,7 @@ its window on the monitor whose launcher was used.
 | SHA256 | `007318ce6d733d643c61030ca30b77de333c0ee783110a9ec84cb36de312ddbf` |
 | Rollback | r17 and r16 stay published |
 | Branch | `refurb/0.3` |
+| Release | <https://github.com/timdaymude/refurbished-linux/releases/tag/v0.3.0-r17.1> |
 
 ## 1. The UEFI boot menu
 

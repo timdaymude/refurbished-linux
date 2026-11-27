@@ -4,7 +4,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r17.1, test image) — dark by default, with a bootable ISO that
+Version **0.3.0** (release r17.2, test image) — dark by default, with a bootable ISO that
 installs with the Calamares graphical installer and ships the Reawakening
 wallpapers.
 
@@ -41,6 +41,31 @@ icons, its own font, its own interaction model — running on top of the tiny
 ## Status: read this before trusting anything
 
 **Verified**
+
+- `reawakening-os-0.3.0-r17.2-amd64.iso` builds end to end and is
+  **1,272,578,048 bytes** with SHA256
+  (`44f8bdf7e5f90349f5ff47a55c1a0b8c8e72243a408e65ae27bc0694c803159e`). r17.2 is
+  the USB boot fix, made after r17.1's graphical menu appeared on Craig's
+  Chromebook but selecting Linux printed `error: file '/live/vmlinuz' not
+  found`. Two faults in the UEFI path: GRUB starts on its own RAM disk and a
+  single `search --no-floppy` can miss a stick the firmware classifies as a
+  floppy-class device, leaving `root` on the RAM disk; and the EFI image
+  carried GRUB's BIOS storage drivers, so the initrd was read through GRUB's
+  own driver from inside the kernel's `EFI_LOAD_FILE2` callback, after Linux
+  had taken the controller over, and came back as
+  `0x8000000000000001`. The menu now finds the medium four ways — file search
+  without `--no-floppy`, squashfs search, volume label, a walk of the device
+  names including `usb*` and partition suffixes, and loopback for an ISO
+  stored as a file — and only accepts a device that really holds
+  `/live/vmlinuz`; the EFI image now uses firmware block I/O only, as Debian's
+  own UEFI image does. Verified in QEMU from this image: the branded menu and
+  the live desktop when booted from a virtual optical drive **and** from an
+  emulated USB stick (EHCI, OVMF), where kernel 6.12.118 loaded, the initrd was
+  accepted, the session reached the live desktop and Cockpit was listening.
+  `scripts/check-config.sh` passes, with a new r17.2 group that fails if a BIOS
+  storage driver or `--no-floppy` returns. Not yet verified: Craig's firmware, a
+  stick written in ISO-image mode, and the BIOS path (unchanged this round) —
+  see `docs/round-17-2.md`.
 
 - `reawakening-os-0.3.0-r17.1-amd64.iso` builds end to end and is
   **1,272,578,048 bytes** with SHA256

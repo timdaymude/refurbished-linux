@@ -383,3 +383,22 @@ OS. It is ordered by how much it could hurt.
   removed by `calamares-finalize`.** Renaming the live account or its desktop
   folder means changing both places; the check in `scripts/check-config.sh`
   names the file so a rename cannot pass silently.
+
+## Round 17.2 additions
+
+- **The USB boot fix is proven against OVMF and an emulated USB stick, not on
+  Craig's firmware.** It covers the known ways firmware can hide the volume
+  holding `/live` from GRUB — a floppy-class device skipped by `--no-floppy`, a
+  stick whose partition table GRUB cannot parse, and an ISO stored as a file —
+  and the initrd handover that failed behind it. Only the Chromebook can confirm
+  it; a second different failure there would be a new fault, not this one.
+- **The ISO-file (loopback) route is implemented but not exercised end to end.**
+  No stick was written in "ISO image mode" for this round, so that branch is
+  syntax-checked only.
+- **The name walk covers `hd*`, `cd*` and `usb*` device names.** Anything the
+  firmware names differently is left to the three `search` stages in front of it,
+  which do not depend on naming.
+- **The BIOS (syslinux) path is unchanged** and was not re-run this round; it was
+  verified for r17.1.
+- **No desktop, installer, store or hardware test was repeated** for r17.2,
+  because no code behind them changed. Those results stand from r17.1.

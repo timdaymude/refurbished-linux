@@ -449,26 +449,83 @@ if terminal_output gfxterm; then
     fi
 fi
 
-# GRUB starts with $root on the device it was loaded from. On UEFI that is the
-# 10 MB FAT image carrying this binary (label REFURBEFI), which never contains
-# /live/vmlinuz, so a plain "linux /live/vmlinuz" dies on real hardware with
+# Finding the live files.
+#
+# $root is NOT trusted here. On UEFI it starts as (memdisk) -- this program's
+# own RAM disk, which holds the menu and the theme but never /live/vmlinuz --
+# and on a USB stick it can also be the small FAT image the firmware loaded
+# this program from. A menu entry that inherits either one dies with
 #   error: file '/live/vmlinuz' not found.
 #   error: you need to load the kernel first.
-# Locate the medium that really holds /live: kernel file, then squashfs, then
-# volume label. Covers CD, DVD and an ISO dd-written to a USB stick.
-set live_found=0
-if search --no-floppy --set=root --file /live/vmlinuz; then
-    set live_found=1
-fi
-if [ "$live_found" = 0 ]; then
-    if search --no-floppy --set=root --file /live/filesystem.squashfs; then
-        set live_found=1
+# only after the boot medium has been found.
+#
+# $live is empty unless a device really holds the kernel, and every candidate
+# is checked for the file before it is used, so a partial answer from one
+# method cannot poison the next one.
+set live=
+
+# 1. Let GRUB search every device it can see: by kernel, by squashfs, then by
+#    the volume label. --no-floppy is deliberately absent: firmware that
+#    classifies a USB stick as a floppy-class device makes that flag skip it.
+if search --set=live --file /live/vmlinuz; then
+    if [ ! -f ($live)/live/vmlinuz ]; then
+        set live=
     fi
 fi
-if [ "$live_found" = 0 ]; then
-    if search --no-floppy --set=root --label REAWAKENING_OS; then
-        set live_found=1
+if [ -z "$live" ]; then
+    if search --set=live --file /live/filesystem.squashfs; then
+        if [ ! -f ($live)/live/vmlinuz ]; then
+            set live=
+        fi
     fi
+fi
+if [ -z "$live" ]; then
+    if search --set=live --label REAWAKENING_OS; then
+        if [ ! -f ($live)/live/vmlinuz ]; then
+            set live=
+        fi
+    fi
+fi
+
+# 2. Walk the names GRUB gives to firmware block devices by hand. When the
+#    partition table on the stick cannot be parsed, the search in step 1 can
+#    stop before it reaches the medium even though the medium itself reads
+#    fine by name. hd/cd/usb cover firmware naming; the partition suffixes
+#    cover a stick whose partition table survived the write.
+if [ -z "$live" ]; then
+    for d in (hd0) (hd1) (hd2) (hd3) (hd4) (hd5) \
+             (cd0) (cd1) (cd2) (usb0) (usb1) (usb2) \
+             (hd0,gpt1) (hd0,gpt2) (hd0,msdos1) (hd0,msdos2) \
+             (hd1,gpt1) (hd1,gpt2) (hd1,msdos1) (hd1,msdos2) \
+             (hd2,gpt1) (hd2,gpt2) (hd2,msdos1) (hd2,msdos2) \
+             (hd3,gpt1) (hd3,msdos1); do
+        if [ -z "$live" ]; then
+            if [ -f ($d)/live/vmlinuz ]; then
+                set live=$d
+            fi
+        fi
+    done
+fi
+
+# 3. An ISO stored on the stick as a file (the "ISO image mode" of several
+#    writing tools) rather than written raw. Mount it with loopback.
+if [ -z "$live" ]; then
+    for d in (hd0) (hd1) (hd2) (hd0,gpt1) (hd0,msdos1) \
+             (hd1,gpt1) (hd1,msdos1) (hd2,gpt1) (hd2,msdos1); do
+        if [ -z "$live" ]; then
+            if [ -f ($d)/__ISO_NAME__ ]; then
+                if loopback loop ($d)/__ISO_NAME__; then
+                    if [ -f ($loop)/live/vmlinuz ]; then
+                        set live=$loop
+                    fi
+                fi
+            fi
+        fi
+    done
+fi
+
+if [ -n "$live" ]; then
+    set root=$live
 fi
 
 # If the theme is not embedded (an old build tree), fall back to the copy on
@@ -481,19 +538,43 @@ if [ -z "$theme" ]; then
     fi
 fi
 
+# Shown in place of a bare GRUB error when no device holds the live files.
+function no_medium {
+    echo '  Reawakening OS could not read its live files from this stick.'
+    echo '  GRUB can see these devices:'
+    ls
+    echo '  Write the image in dd/raw mode, check the stick was written'
+    echo '  completely, and keep the ISO file name unchanged if it was copied'
+    echo '  onto the stick as a file.'
+}
+
 menuentry "Start Reawakening OS" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
-    initrd ($root)/live/initrd.img
+    if [ -z "$live" ]; then
+        no_medium
+    else
+        linux ($live)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
+        initrd ($live)/live/initrd.img
+    fi
 }
 menuentry "Start Reawakening OS (verbose boot)" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
-    initrd ($root)/live/initrd.img
+    if [ -z "$live" ]; then
+        no_medium
+    else
+        linux ($live)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin
+        initrd ($live)/live/initrd.img
+    fi
 }
 menuentry "Memory report (support / benchmark boot)" {
-    linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet refurb.measure=1
-    initrd ($root)/live/initrd.img
+    if [ -z "$live" ]; then
+        no_medium
+    else
+        linux ($live)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet refurb.measure=1
+        initrd ($live)/live/initrd.img
+    fi
 }
 EOF
+        # The ISO's own file name, for the loopback fallback in step 3.
+        sed -i "s|__ISO_NAME__|$ISO_NAME|g" "$WORK/grub-efi.cfg"
         sed -i "s|^set timeout=5|set timeout=${MENU_TIMEOUT:-5}|" "$WORK/grub-efi.cfg"
         if [ -n "${BOOT_EXTRA:-}" ]; then
             sed -i "s|quiet splash|${BOOT_EXTRA}|" "$WORK/grub-efi.cfg"
@@ -504,6 +585,19 @@ EOF
         # iso9660/udf: reading the ISO volume itself; search_fs_file and
         # search_label: the --file and --label forms used above (plain
         # "search" alone only offers --fs-uuid).
+        # efidisk, and NOTHING from the BIOS stack (ahci ata pata scsi usb
+        # usbms uhci ohci ehci). Those drivers take the medium away from the
+        # firmware's own block I/O, and GRUB then reads the kernel through its
+        # own PCI/USB driver. That works for the kernel image but fails for the
+        # initrd: it is read lazily from inside the EFI stub's
+        # EFI_LOAD_FILE2_PROTOCOL callback, after Linux has taken over the CPU,
+        # and the read comes back as a device error:
+        #   EFI stub: ERROR: Failed to load initrd: 0x8000000000000001
+        #   error: start_image() returned 0x8000000000000001.
+        # Measured under OVMF: with the BIOS storage modules in the image the
+        # live system never started; without them the same ISO boots to
+        # userspace. Firmware block I/O (efidisk) stays valid across that
+        # handover, which is why every other UEFI bootloader uses it.
         # Embed the theme in the EFI image itself: one file on the medium can be
         # present but unreadable (a damaged ISO, a USB stick written badly), and
         # the boot menu should still be the branded one. The files are the same
@@ -513,7 +607,7 @@ EOF
             theme_files="$theme_files boot/grub/themes/reawakening/$(basename "$theme_file")=$theme_file"
         done
         grub-mkstandalone --directory "$GRUB_MOD" -O x86_64-efi \
-            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video efi_gop efi_uga video_bochs video_cirrus gfxterm gfxmenu png font gfxterm_background ahci ata pata scsi usb usbms uhci ohci ehci" \
+            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo loopback all_video efi_gop efi_uga video_bochs video_cirrus gfxterm gfxmenu png font gfxterm_background" \
             --locales="" --fonts="unicode" --themes="" \
             --output="$WORK/bootx64.efi" \
             "boot/grub/grub.cfg=$WORK/grub-efi.cfg" $theme_files || echo "grub-mkstandalone failed: BIOS-only ISO" >&2

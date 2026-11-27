@@ -25,6 +25,7 @@ full per-release report.
 | 0.3.0-r16 GNOME Software store, launcher discovery, boot theme, cursor and updater fixes **(prerelease)** | 1,237,876,736 | `2fb11d141a2d8d3354dd99acdc58b3c539513e54591a4a6249898534b55554e3` | `v0.3.0-r16` — `reawakening-os-0.3.0-r16-amd64.iso` | none (release is the copy) |
 | 0.3.0-r17 wallpapers, Set as Desktop Wallpaper, multi-monitor panel, 12/24-hour clock, boot menu scaling **(prerelease)** | 1,263,861,760 | `b6941bf5b57b5f9952d4df469fef8f31af720c9f6f05570d0a2c58737459395a` | `v0.3.0-r17` — `reawakening-os-0.3.0-r17-amd64.iso` | none (release is the copy) |
 | 0.3.0-r17.1 graphical UEFI menu, live installer shortcut, every app on the desktop, per-monitor launches **(prerelease)** | 1,272,578,048 | `007318ce6d733d643c61030ca30b77de333c0ee783110a9ec84cb36de312ddbf` | `v0.3.0-r17.1` — `reawakening-os-0.3.0-r17.1-amd64.iso` | none (release is the copy) |
+| 0.3.0-r17.2 USB boot: the medium is found by four routes, and the UEFI initrd handover works **(prerelease)** | 1,272,578,048 | `44f8bdf7e5f90349f5ff47a55c1a0b8c8e72243a408e65ae27bc0694c803159e` | `v0.3.0-r17.2` — `reawakening-os-0.3.0-r17.2-amd64.iso` | none (release is the copy) |
 
 ## Naming
 
@@ -38,6 +39,16 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r17.2**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified from the shipped image in QEMU: the branded menu, kernel 6.12.118
+  loading with its initrd and the live desktop when booted from a virtual
+  optical drive **and** from an emulated USB stick (EHCI under OVMF), and
+  `check-config.sh` including a new group that fails if GRUB's BIOS storage
+  drivers or `--no-floppy` return to the EFI image. The two faults are explained
+  in `round-17-2.md`: GRUB's `$root` stayed on its own RAM disk when one
+  `search --no-floppy` missed the stick, and the initrd was read through GRUB's
+  own AHCI/USB driver after Linux had taken the controller over
+  (`start_image() returned 0x8000000000000001`).
 - **r17.1**: published as a prerelease with the ISO and its `.sha256` report.
   Verified from the shipped ISO in QEMU: the UEFI menu is the branded graphical
   GRUB theme (artwork, three entries, selection highlight and countdown) and the

@@ -442,6 +442,31 @@ else
     err "the UEFI menu still forces the text fallback"
 fi
 
+echo "== r17.2: the medium is found, and the UEFI handover works"
+# The efi image must not carry GRUB's BIOS storage drivers: they take the
+# medium away from firmware block I/O and the initrd read then fails inside
+# the kernel's EFI_LOAD_FILE2 callback (start_image() 0x8000000000000001).
+if sed -n '/--modules=/p' "$ROOT/scripts/mkiso.sh" | grep -q 'efi_gop' && \
+   ! sed -n '/--modules=/p' "$ROOT/scripts/mkiso.sh" | \
+       grep -Eq 'ahci|pata|usbms|uhci|ohci|ehci'; then
+    ok "the UEFI image reads the medium through firmware block I/O only"
+else
+    err "GRUB's BIOS storage drivers are still in the UEFI image"
+fi
+if grep -q 'set live=' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'for d in (hd0)' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'if loopback loop' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'no_medium' "$ROOT/scripts/mkiso.sh"; then
+    ok "the kernel is located by search, by device name and inside an ISO file"
+else
+    err "the boot menu can still inherit a wrong root device"
+fi
+if ! grep -q 'search --no-floppy' "$ROOT/scripts/mkiso.sh"; then
+    ok "medium detection does not skip floppy-class USB devices"
+else
+    err "--no-floppy can skip a USB stick the firmware calls a floppy"
+fi
+
 echo "== no update daemon, packagekit or indexer is enabled"
 if grep -Rqs 'unattended-upgrades.service\|packagekit.service' "$DISTRO/config/hooks/normal/0200-no-background-work.hook.chroot"; then
     ok "masked in 0200-no-background-work"

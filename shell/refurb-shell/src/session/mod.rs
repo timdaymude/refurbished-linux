@@ -33,8 +33,11 @@ use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_l
 
 use crate::apps;
 use crate::desktop as desk;
+use crate::displays;
 use crate::keys::{Key, Keymap, Modifiers};
+use crate::prefs;
 use crate::system;
+use crate::wallpaper;
 use crate::ui::{self, Action, App, Focus, Section, SliderKind, Surface, Tool, WindowKind};
 use crate::theme;
 
@@ -134,6 +137,18 @@ impl Drop for ShmBuffer {
     }
 }
 
+/// A screen rectangle being dragged in Settings → Display. Kept in the session
+/// rather than the interface because it spans pointer motion events.
+#[derive(Clone, Copy)]
+struct DisplayDrag {
+    index: usize,
+    start_pointer: (f64, f64),
+    start_position: (i32, i32),
+    /// Screen pixels per diagram pixel, taken from the tile that was clicked.
+    scale: f32,
+    moved: bool,
+}
+
 struct TlEntry {
     handle: zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1,
     title: String,
@@ -154,7 +169,19 @@ enum Msg {
     /// A recount made without touching the network, used when the Updates panel
     /// opens so a number from an earlier session cannot outlive its updates.
     UpdatesRecount(Result<system::UpdateScan, String>),
-    Displays(Vec<ui::DisplayOutput>),
+    Displays(Vec<displays::Output>),
+    /// The saved arrangements for screens that were just plugged in have been
+    /// put back, and the outputs have been re-read.
+    DisplaysRestored(Vec<displays::Output>, Vec<String>),
+    /// An arrangement was applied. `confirm` asks the panel to start its
+    /// fifteen-second countdown; a revert does not ask again.
+    DisplayApplied {
+        result: Result<(), String>,
+        outputs: Vec<displays::Output>,
+        confirm: bool,
+    },
+    /// Another process changed the wallpaper configuration file.
+    WallpaperChanged,
     /// Cockpit's state, re-read after the panel opened or after a change. The
     /// second field is the line to show: what changed, or why it did not.
     Remote(Result<system::CockpitState, String>, Option<String>),
@@ -204,6 +231,25 @@ pub struct Session {
     /// unplugged while the desktop runs is announced through the registry, and
     /// the name is the only way to match that announcement to a screen.
     output_globals: Vec<(u32, wl_output::WlOutput)>,
+    /// Connector name (`HDMI-A-1`) reported by each bound output. wl_output
+    /// version 4 carries it; an older compositor leaves this empty and the
+    /// shell falls back to registry order.
+    output_names: std::collections::HashMap<u32, String>,
+    /// Which screen set the wallpaper and bar surfaces were built for, so the
+    /// once-a-second output check does not rebuild them for no reason.
+    screens_for: Option<(usize, usize)>,
+    /// The current mode size of each screen, from wl_output. A layer surface
+    /// may be told "choose your own size" (a zero configure), and r17 measured
+    /// what that costs: after switching 1280x800 to 1920x1080 the wallpaper
+    /// stayed in the corner and the rest of the screen was black. Sizing the
+    /// wallpaper surface from the mode we just saw does not depend on the
+    /// compositor repeating the size it already sent once.
+    output_sizes: std::collections::HashMap<u32, (u32, u32)>,
+    /// A rectangle being dragged in Settings → Display.
+    display_drag: Option<DisplayDrag>,
+    /// Monitors whose saved arrangement was already restored this session, so
+    /// reconnecting and refreshing cannot apply the same profile twice.
+    displays_restored: Vec<String>,
     /// Put the bar along the bottom edge instead of the top (REFURB_BAR_POSITION=bottom).
     bar_bottom: bool,
     toplevels: Vec<TlEntry>,
@@ -309,6 +355,16 @@ pub fn run() -> Result<(), String> {
             let _ = tx.send(Msg::AppsChanged);
         });
     }
+    // The file manager's "Set as Desktop Wallpaper" writes the same
+    // configuration file Settings writes. Watching it means the change lands on
+    // every screen at once with the desktop already running, and costs one
+    // sleeping thread instead of a polling timer.
+    {
+        let tx = tx.clone();
+        spawn_wallpaper_watch(move || {
+            let _ = tx.send(Msg::WallpaperChanged);
+        });
+    }
     desk::ensure_dir();
     desk::refresh(&mut app.st.desk, true);
     // The taskbar belongs along the bottom edge of every screen, which is what
@@ -346,6 +402,11 @@ pub fn run() -> Result<(), String> {
         surfaces: Vec::new(),
         outputs,
         output_globals,
+        output_names: std::collections::HashMap::new(),
+        screens_for: None,
+        output_sizes: std::collections::HashMap::new(),
+        display_drag: None,
+        displays_restored: Vec::new(),
         bar_bottom,
         toplevels: Vec::new(),
         tx,
@@ -375,15 +436,21 @@ pub fn run() -> Result<(), String> {
         session.attach_seat(seat);
     }
     let _ = ftl;
+    // Screens that were already connected at login do not produce a registry
+    // event, so the saved arrangement is restored once here as well.
+    session.spawn_display_restore();
 
     // Wallpaper first, then the bar: the desktop must be below everything.
-    // The first screen keeps the plain ids; every further screen gets its own
-    // pair so second and third monitors are not left black and barless.
+    // The main screen keeps the plain ids and the desktop icons; every other
+    // screen gets its own pair, so second and third monitors are not left black
+    // and barless.
     session.open_layer(Surface::Desktop);
     session.open_layer(Surface::Bar);
-    let extra = session.outputs.len().saturating_sub(1);
-    for index in 0..extra {
-        let index = index as u32 + 1;
+    for index in 0..session.outputs.len() {
+        if index == session.primary_index() {
+            continue;
+        }
+        let index = index as u32;
         session.open_layer(Surface::DesktopOn(index));
         session.open_layer(Surface::BarOn(index));
     }
@@ -434,9 +501,11 @@ impl Session {
             _ => zwlr_layer_shell_v1::Layer::Overlay,
         };
         // Pin each surface to a real screen: without an output the compositor
-        // picks one, which leaves every other monitor without a bar.
+        // picks one, which leaves every other monitor without a bar. The plain
+        // ids follow the main display, which the user chooses in Settings.
+        let primary = self.primary_index();
         let output = match id {
-            Surface::Desktop | Surface::Bar => self.outputs.first().cloned(),
+            Surface::Desktop | Surface::Bar => self.outputs.get(primary).cloned(),
             Surface::DesktopOn(index) | Surface::BarOn(index) => {
                 self.outputs.get(index as usize).cloned()
             }
@@ -453,20 +522,28 @@ impl Session {
         let mut width = 0u32;
         let mut height = BAR_HEIGHT;
         let mut exclusive_keys = false;
+        // The wallpaper covers its whole screen, so it is sized from that
+        // screen's current mode instead of asking the compositor to pick.
+        let desktop_size = output
+            .as_ref()
+            .and_then(|o| self.output_sizes.get(&o.id().protocol_id()).copied())
+            .map(|(w, h)| (w.max(1), h.max(1)))
+            .unwrap_or((0, 0));
         match id {
             Surface::Desktop | Surface::DesktopOn(_) => {
-                width = 0;
-                height = 0;
-                // Anchor to all four edges with a zero size: the compositor
-                // then tells us the output size in its configure event, which
-                // is also how a resolution change reaches the wallpaper.
+                width = desktop_size.0;
+                height = desktop_size.1;
+                // Anchored to all four edges. The size is the current mode when
+                // it is known, so a resolution change cannot leave the
+                // wallpaper at the old size in the corner; with no mode yet it
+                // is zero and the compositor's configure supplies it.
                 surface.set_anchor(
                     zwlr_layer_surface_v1::Anchor::Top
                         | zwlr_layer_surface_v1::Anchor::Bottom
                         | zwlr_layer_surface_v1::Anchor::Left
                         | zwlr_layer_surface_v1::Anchor::Right,
                 );
-                surface.set_size(0, 0);
+                surface.set_size(desktop_size.0, desktop_size.1);
                 // -1: the wallpaper ignores the bar's exclusive zone and covers
                 // the whole output behind it.
                 surface.set_exclusive_zone(-1);
@@ -611,6 +688,15 @@ impl Session {
             return;
         };
         let entry = self.surfaces.remove(idx);
+        // A screen surface that goes away (the compositor closed it, or the
+        // screen was unplugged) has to be rebuilt even if the screen list is
+        // otherwise unchanged.
+        if matches!(
+            id,
+            Surface::Desktop | Surface::Bar | Surface::DesktopOn(_) | Surface::BarOn(_)
+        ) {
+            self.screens_for = None;
+        }
         match entry.role {
             Role::Layer(surface) => {
                 surface.destroy();
@@ -800,6 +886,12 @@ impl Session {
                 Some(buffer) => !buffer.busy.load(Ordering::Relaxed),
             });
         let Some(slot) = slot else {
+            // Both buffers are still held by the compositor. Dropping the paint
+            // here left the old frame on screen for good: measured after a
+            // resolution change, the wallpaper stayed at 1280x800 on a
+            // 1920x1080 output and the rest of the screen was black. Put the
+            // surface back in the queue and try again on the next frame.
+            self.invalidate(Some(id));
             return false;
         };
         let need_new = match &self.surfaces[idx].buffers[slot] {
@@ -897,6 +989,24 @@ impl Session {
     /// current output list. Only monitors being added or removed reaches this,
     /// so the cost of recreating a handful of layer surfaces is irrelevant.
     fn rebuild_screens(&mut self) {
+        // Idempotent. The output list is reconciled once a second, and the
+        // first tick arrives while the wallpaper and bar are still waiting for
+        // their first configure: destroying and recreating them there meant a
+        // configure for the old surface marked the new one as configured, the
+        // next frame committed a buffer the compositor had never configured,
+        // and labwc dropped the shell with "layer_surface has never been
+        // configured". Measured in r17 as a black screen with a working
+        // pointer that restarted the shell every two seconds. When the set of
+        // screens and the main display have not changed there is nothing to
+        // rebuild.
+        let wanted = (self.outputs.len(), self.primary_index());
+        let built = self.screens_for == Some(wanted)
+            && self.surfaces.iter().any(|s| s.id == Surface::Desktop)
+            && self.surfaces.iter().any(|s| s.id == Surface::Bar);
+        if built {
+            return;
+        }
+        self.screens_for = Some(wanted);
         let stale: Vec<Surface> = self
             .surfaces
             .iter()
@@ -915,11 +1025,14 @@ impl Session {
             self.redraw_visible();
             return;
         }
+        let primary = self.primary_index();
         self.open_layer(Surface::Desktop);
         self.open_layer(Surface::Bar);
-        let extra = self.outputs.len().saturating_sub(1);
-        for index in 0..extra {
-            let index = index as u32 + 1;
+        for index in 0..self.outputs.len() {
+            if index == primary {
+                continue;
+            }
+            let index = index as u32;
             self.open_layer(Surface::DesktopOn(index));
             self.open_layer(Surface::BarOn(index));
         }
@@ -1391,11 +1504,148 @@ impl Session {
                 // The pixels are already decoded and cached, so the repaint at
                 // the end of dispatch() is one blit per screen. Persisting the
                 // choice is what makes it survive the next login.
-                let choice = crate::wallpaper::Choice::from_index(index);
-                self.app.st.wallpaper = choice;
-                if let Err(e) = crate::wallpaper::activate(choice) {
+                let Some(wall) = self
+                    .app
+                    .st
+                    .wallpapers
+                    .get(index)
+                    .map(|entry| entry.wallpaper.clone())
+                else {
+                    return;
+                };
+                if let Err(e) = wallpaper::activate(&wall) {
                     eprintln!("refurb-shell: could not remember the wallpaper choice: {e}");
                 }
+                self.app.st.wallpaper = wall;
+                self.app.reload_wallpapers();
+                self.invalidate(None);
+            }
+            Action::WallpaperBrowse => {
+                // The right-click route lives in the file manager; opening the
+                // folder is the shortest path to it, and it is the same
+                // wallpaper system underneath, not a second implementation.
+                let dir = std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("/"))
+                    .join("Pictures");
+                let _ = std::fs::create_dir_all(&dir);
+                let shown = dir.to_string_lossy().to_string();
+                system::spawn("pcmanfm", &[shown.as_str()]);
+            }
+            Action::ClockFormat(format) => {
+                if let Err(e) = prefs::set_clock(format) {
+                    eprintln!("refurb-shell: could not remember the clock style: {e}");
+                }
+                self.app.set_clock_format(format);
+                self.redraw_bars();
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplaySelect(index) => {
+                if index < self.app.st.display.outputs.len() {
+                    self.app.st.display.selected = index;
+                    self.invalidate(Some(Surface::Settings));
+                }
+            }
+            Action::DisplayToggle(index) => {
+                let Some(out) = self.app.st.display.outputs.get(index).cloned() else {
+                    return;
+                };
+                let enable = !out.enabled;
+                let others: Vec<(i32, i32, u32, u32)> = self
+                    .app
+                    .st
+                    .display
+                    .outputs
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, o)| *i != index && o.enabled)
+                    .map(|(_, o)| o.rect())
+                    .collect();
+                if let Some(out) = self.app.st.display.outputs.get_mut(index) {
+                    out.enabled = enable;
+                    if enable && out.position == (0, 0) && !others.is_empty() {
+                        out.position = displays::auto_position(&others, out.size());
+                    }
+                }
+                self.app.st.display.selected = index;
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplayMode(i) => {
+                let selected = self.app.st.display.selected;
+                if let Some(out) = self.app.st.display.outputs.get_mut(selected) {
+                    if i < out.modes.len() {
+                        for (j, mode) in out.modes.iter_mut().enumerate() {
+                            mode.current = j == i;
+                        }
+                        // Switching a dark screen's mode is a request to use it.
+                        out.enabled = true;
+                    }
+                }
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplayMain(index) => {
+                let Some(out) = self.app.st.display.outputs.get(index).cloned() else {
+                    return;
+                };
+                self.app.st.display.main_name = out.name.clone();
+                self.app.st.display.main_identity = Some(out.identity());
+                self.app.st.display.primary = index;
+                if self.app.st.display.mirrored == Some(index) {
+                    self.app.st.display.mirrored = None;
+                }
+                // The desktop icons move with the main display, which is the
+                // only thing "primary" means to a window manager that places
+                // new windows where the user is working.
+                self.rebuild_screens();
+                self.save_main_display();
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplayMirror => {
+                let selected = self.app.st.display.selected;
+                if selected == self.app.st.display.primary {
+                    return;
+                }
+                self.app.st.display.mirrored = if self.app.st.display.mirrored == Some(selected) {
+                    None
+                } else {
+                    Some(selected)
+                };
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplayIdentify => {
+                self.app.st.display.identify_until = Some(Instant::now() + Duration::from_secs(6));
+                self.invalidate(None);
+            }
+            // Handled with the pointer press, which is where the drag starts.
+            Action::DisplayGrab(_) => {}
+            Action::DisplayApply => {
+                if self.app.st.display.outputs.is_empty() {
+                    return;
+                }
+                let setups = self.staged_display_setups();
+                self.app.st.display.note.clear();
+                self.display_apply(setups, true);
+            }
+            Action::DisplayKeep => {
+                self.save_display_profiles();
+                self.app.st.display.pending = None;
+                self.app.st.display.note =
+                    vec!["Arrangement saved. It comes back when these screens are connected again.".to_string()];
+                self.invalidate(Some(Surface::Settings));
+            }
+            Action::DisplayRevert => {
+                let baseline = self.app.st.display.baseline.clone();
+                self.app.st.display.pending = None;
+                self.app.st.display.note = vec!["Reverted to the previous arrangement.".to_string()];
+                if baseline.is_empty() {
+                    self.spawn_displays();
+                } else {
+                    self.display_apply(baseline, false);
+                }
+            }
+            Action::DisplayRefresh => {
+                self.app.st.display.loading = true;
+                self.spawn_displays();
             }
             Action::UpdateCheck => self.spawn_update(false),
             Action::UpdateInstall => self.spawn_update(true),
@@ -1433,23 +1683,6 @@ impl Session {
                     };
                     let _ = tx.send(Msg::Remote(state, note));
                 });
-            }
-            Action::DisplayMode(i) => {
-                let output = self
-                    .app
-                    .st
-                    .display
-                    .outputs
-                    .get(self.app.st.display.selected)
-                    .cloned();
-                if let Some(output) = output {
-                    if let Some(mode) = output.modes.get(i).cloned() {
-                        if let Err(e) = system::set_display_mode(&output.name, &mode) {
-                            eprintln!("refurb-shell: could not change mode: {e}");
-                        }
-                        self.spawn_displays();
-                    }
-                }
             }
             Action::Power(action) => {
                 // Nothing happens to the power state until the dialog has been
@@ -1606,6 +1839,230 @@ impl Session {
         std::thread::spawn(move || {
             let displays = system::displays();
             let _ = tx.send(Msg::Displays(displays));
+        });
+    }
+
+    // -- displays ---------------------------------------------------------
+
+    /// Index of the screen that carries the desktop icons. Matched by connector
+    /// name from the compositor's own `wl_output.name` event; registry order is
+    /// the fallback on a compositor that does not send it.
+    fn primary_index(&self) -> usize {
+        let main = &self.app.st.display.main_name;
+        if !main.is_empty() {
+            if let Some(index) = self.outputs.iter().position(|out| {
+                self.output_name(out).map(|name| name == main).unwrap_or(false)
+            }) {
+                return index;
+            }
+            if let Some(index) = self
+                .app
+                .st
+                .display
+                .outputs
+                .iter()
+                .position(|out| &out.name == main)
+            {
+                if index < self.outputs.len() {
+                    return index;
+                }
+            }
+        }
+        0
+    }
+
+    fn output_name(&self, output: &wl_output::WlOutput) -> Option<&String> {
+        self.output_names.get(&output.id().protocol_id())
+    }
+
+    /// Put a fresh output list into the interface, choose the main display and
+    /// remember the arrangement that is live right now as the revert target.
+    fn prime_displays(&mut self, outputs: Vec<displays::Output>) {
+        let ui = &mut self.app.st.display;
+        ui.outputs = outputs;
+        ui.loading = false;
+        if ui.outputs.is_empty() {
+            ui.selected = 0;
+            ui.primary = 0;
+            ui.baseline.clear();
+            self.invalidate(Some(Surface::Settings));
+            return;
+        }
+        if ui.selected >= ui.outputs.len() {
+            ui.selected = 0;
+        }
+        let main = if !ui.main_name.is_empty() {
+            ui.outputs.iter().position(|o| o.name == ui.main_name)
+        } else {
+            None
+        };
+        let by_identity = ui.main_identity.as_ref().and_then(|id| {
+            ui.outputs.iter().position(|o| &o.identity() == id)
+        });
+        let primary = main.or(by_identity).unwrap_or(0);
+        ui.primary = primary;
+        ui.main_name = ui.outputs[primary].name.clone();
+        if ui.main_identity.is_none() {
+            ui.main_identity = Some(ui.outputs[primary].identity());
+        }
+        if ui.mirrored.map(|i| i >= ui.outputs.len()).unwrap_or(false) {
+            ui.mirrored = None;
+        }
+        if ui.pending.is_none() {
+            let setups = Self::setups_from(&ui.outputs, &ui.main_name, None);
+            ui.baseline = setups;
+        }
+        self.invalidate(Some(Surface::Settings));
+    }
+
+    fn setups_from(
+        outputs: &[displays::Output],
+        main_name: &str,
+        mirrored: Option<usize>,
+    ) -> Vec<displays::Setup> {
+        displays::setups(outputs, main_name, mirrored)
+    }
+
+    /// What Apply would send: the main display first (a mirror source must
+    /// exist before the copy), then everything else.
+    fn staged_display_setups(&self) -> Vec<displays::Setup> {
+        let ui = &self.app.st.display;
+        Self::setups_from(&ui.outputs, &ui.main_name, ui.mirrored)
+    }
+
+    /// Apply on a worker thread: `wlr-randr` talks to the compositor and must
+    /// never stall the frame loop. `confirm` starts the fifteen-second
+    /// countdown; a revert or a startup restore does not.
+    fn display_apply(&mut self, setups: Vec<displays::Setup>, confirm: bool) {
+        if setups.is_empty() {
+            self.app.st.display.loading = false;
+            return;
+        }
+        self.app.st.display.loading = true;
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let result = displays::apply(&setups);
+            // Read back what the compositor actually did, which is the only
+            // truth worth showing in the panel.
+            let outputs = system::displays();
+            let _ = tx.send(Msg::DisplayApplied {
+                result,
+                outputs,
+                confirm,
+            });
+        });
+    }
+
+    /// Store the arrangement (and which screen is main) so reconnecting the
+    /// same monitor puts it back.
+    fn save_display_profiles(&mut self) {
+        let Some(path) = displays::profiles_path() else {
+            return;
+        };
+        let mut profiles = displays::Profiles::load(&path);
+        let main_identity = self.app.st.display.main_identity.clone();
+        profiles.main = main_identity.clone();
+        for (index, out) in self.app.st.display.outputs.iter().enumerate() {
+            let mut profile = displays::Profile::from_output(out);
+            profile.enabled = out.enabled;
+            if self.app.st.display.mirrored == Some(index) {
+                profile.same_as = main_identity.clone();
+                profile.enabled = true;
+            } else if out.name == self.app.st.display.main_name {
+                profile.same_as = None;
+            }
+            profiles.put(profile);
+        }
+        if let Err(e) = profiles.save(&path) {
+            eprintln!("refurb-shell: could not save the display arrangement: {e}");
+        }
+    }
+
+    fn save_main_display(&mut self) {
+        let Some(path) = displays::profiles_path() else {
+            return;
+        };
+        let mut profiles = displays::Profiles::load(&path);
+        profiles.main = self.app.st.display.main_identity.clone();
+        if let Err(e) = profiles.save(&path) {
+            eprintln!("refurb-shell: could not save the main display: {e}");
+        }
+    }
+
+    /// Restore the saved arrangement for whichever screens have just arrived.
+    /// One shot per screen per session: no timer, no watcher, no daemon.
+    fn spawn_display_restore(&mut self) {
+        let tx = self.tx.clone();
+        let already = self.displays_restored.clone();
+        std::thread::spawn(move || {
+            let outputs = system::displays();
+            let profiles = displays::profiles_path()
+                .map(|path| displays::Profiles::load(&path))
+                .unwrap_or_default();
+            let mut setups: Vec<displays::Setup> = Vec::new();
+            let mut applied: Vec<String> = Vec::new();
+            for out in &outputs {
+                let identity = out.identity();
+                if already.contains(&identity) {
+                    continue;
+                }
+                let Some(profile) = profiles.get(&identity) else {
+                    continue;
+                };
+                let source = profile
+                    .same_as
+                    .as_ref()
+                    .and_then(|id| outputs.iter().find(|o| &o.identity() == id));
+                let mut setup = profile.setup(out, source.is_some());
+                if let Some(source) = source {
+                    setup.same_as = Some(source.name.clone());
+                }
+                setups.push(setup);
+                applied.push(identity);
+            }
+            // A screen nobody has arranged yet is switched on to the right of
+            // what is already there instead of staying dark. Plugging in a
+            // television therefore needs no dialog and no Settings visit.
+            let mut others: Vec<(i32, i32, u32, u32)> = outputs
+                .iter()
+                .filter(|o| o.enabled)
+                .map(|o| o.rect())
+                .collect();
+            for out in outputs.iter().filter(|o| !o.enabled) {
+                let identity = out.identity();
+                if profiles.get(&identity).is_some() || already.contains(&identity) {
+                    continue;
+                }
+                let mode = out
+                    .modes
+                    .iter()
+                    .find(|m| m.preferred)
+                    .or_else(|| out.modes.first())
+                    .cloned();
+                let position = displays::auto_position(&others, out.size());
+                others.push((position.0, position.1, out.size().0, out.size().1));
+                setups.push(displays::Setup {
+                    name: out.name.clone(),
+                    enabled: true,
+                    mode,
+                    position: Some(position),
+                    scale: Some(1.0),
+                    transform: Some("normal".to_string()),
+                    same_as: None,
+                });
+                applied.push(identity);
+            }
+            if !setups.is_empty() {
+                if let Err(e) = displays::apply(&setups) {
+                    eprintln!("refurb-shell: could not restore a display arrangement: {e}");
+                }
+            }
+            let outputs = if setups.is_empty() {
+                outputs
+            } else {
+                system::displays()
+            };
+            let _ = tx.send(Msg::DisplaysRestored(outputs, applied));
         });
     }
 
@@ -1777,9 +2234,49 @@ impl Session {
                     self.apply_update_scan(scan);
                 }
             }
-            Msg::Displays(displays) => {
-                self.app.st.display.outputs = displays;
-                self.app.st.display.selected = 0;
+            Msg::Displays(outputs) => self.prime_displays(outputs),
+            Msg::DisplaysRestored(outputs, applied) => {
+                for identity in applied {
+                    if !self.displays_restored.contains(&identity) {
+                        self.displays_restored.push(identity);
+                    }
+                }
+                self.prime_displays(outputs);
+                self.note(format!(
+                    "restored {} saved display arrangement(s)",
+                    self.displays_restored.len()
+                ));
+            }
+            Msg::DisplayApplied {
+                result,
+                outputs,
+                confirm,
+            } => {
+                self.prime_displays(outputs);
+                match result {
+                    Ok(()) => {
+                        if confirm {
+                            self.app.st.display.pending = Some(ui::DisplayPending {
+                                deadline: Instant::now() + Duration::from_secs(15),
+                                reason: "Press Keep if the arrangement works. Otherwise it goes back."
+                                    .to_string(),
+                            });
+                            self.app.st.display.note.clear();
+                        } else {
+                            self.app.st.display.pending = None;
+                        }
+                    }
+                    Err(error) => {
+                        self.app.st.display.pending = None;
+                        self.app.st.display.note = vec![format!("Could not apply: {error}")];
+                    }
+                }
+                self.invalidate(Some(Surface::Settings));
+            }
+            Msg::WallpaperChanged => {
+                self.app.st.wallpaper = wallpaper::restore();
+                self.app.reload_wallpapers();
+                self.invalidate(None);
             }
             Msg::Remote(result, note) => {
                 self.app.st.remote.busy = false;
@@ -1931,6 +2428,34 @@ impl Session {
                 // the next session opens with.
                 desk::save_layout(&self.app.st.desk.icons);
             }
+            if let Some(drag) = self.display_drag.take() {
+                // Dropping a screen rectangle is the moment its position becomes
+                // the one Apply will use. Snapping happens here, not during the
+                // drag, so the rectangle follows the pointer exactly and then
+                // settles onto a neighbour's edge.
+                let outputs = &self.app.st.display.outputs;
+                let size = outputs.get(drag.index).map(|o| o.size()).unwrap_or((1920, 1080));
+                let others: Vec<(i32, i32, u32, u32)> = outputs
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, o)| *i != drag.index && o.enabled)
+                    .map(|(_, o)| o.rect())
+                    .collect();
+                let position = outputs
+                    .get(drag.index)
+                    .map(|o| o.position)
+                    .unwrap_or((0, 0));
+                let snapped = displays::snap_position(
+                    position,
+                    size,
+                    &others,
+                    (14.0 / drag.scale.max(0.02)) as i32,
+                );
+                if let Some(out) = self.app.st.display.outputs.get_mut(drag.index) {
+                    out.position = snapped;
+                }
+                self.invalidate(Some(Surface::Settings));
+            }
             self.drag = None;
             return;
         }
@@ -1990,6 +2515,23 @@ impl Session {
             self.dispatch(Action::QuickClose);
         }
         self.note(format!("press at {x},{y} on {surface:?} -> {action:?} rect {rect:?}"));
+        // A screen rectangle in Settings → Display: select it and remember where
+        // the drag started. The tile's own width gives the diagram's scale, so
+        // the same code works at any window size.
+        if let Action::DisplayGrab(index) = action {
+            if let Some(out) = self.app.st.display.outputs.get(index).cloned() {
+                let (w, _) = out.size();
+                self.display_drag = Some(DisplayDrag {
+                    index,
+                    start_pointer: (x as f64, y as f64),
+                    start_position: out.position,
+                    scale: (rect.width() / w.max(1) as f32).max(0.001),
+                    moved: false,
+                });
+                self.dispatch(Action::DisplaySelect(index));
+                return;
+            }
+        }
         // Sliders carry their own track rect, so the value is taken from the
         // click position and the drag continues from there.
         match action {
@@ -2039,6 +2581,23 @@ impl Session {
 
     fn on_pointer_motion(&mut self, position: (f64, f64)) {
         self.pointer_pos = position;
+        if let Some(drag) = self.display_drag {
+            let dx = ((position.0 - drag.start_pointer.0) / drag.scale.max(0.001) as f64).round()
+                as i32;
+            let dy = ((position.1 - drag.start_pointer.1) / drag.scale.max(0.001) as f64).round()
+                as i32;
+            let next = (drag.start_position.0 + dx, drag.start_position.1 + dy);
+            if let Some(out) = self.app.st.display.outputs.get_mut(drag.index) {
+                if out.position != next {
+                    out.position = next;
+                    if let Some(active) = self.display_drag.as_mut() {
+                        active.moved = true;
+                    }
+                    self.invalidate(Some(Surface::Settings));
+                }
+            }
+            return;
+        }
         // Dragging a desktop icon moves it to the nearest free cell; the icon
         // never leaves the visible grid, so it cannot be lost off-screen.
         if self.pointer_down {
@@ -2140,6 +2699,23 @@ impl Session {
             }
             "quick" => self.dispatch(Action::QuickToggle),
             "settings" => self.dispatch(Action::WindowOpen(WindowKind::Settings)),
+            // Open Settings straight on the Display page. Useful with three
+            // screens and no obvious "which one is which".
+            "display" => {
+                self.app.st.settings.section = Section::Display;
+                self.dispatch(Action::WindowOpen(WindowKind::Settings));
+                self.spawn_displays();
+            }
+            // Open Settings straight on the wallpaper and clock page. Used by
+            // the file manager's "Set as Desktop Wallpaper" application when
+            // it is started without a picture.
+            "appearance" => {
+                self.app.st.settings.section = Section::Appearance;
+                self.dispatch(Action::WindowOpen(WindowKind::Settings));
+                self.app.reload_wallpapers();
+            }
+            // Put a large number on every screen for a few seconds.
+            "identify" => self.dispatch(Action::DisplayIdentify),
             "lock" => self.dispatch(Action::Lock),
             // The machine's own power key (labwc keybind): the dialog answers
             // this, not logind, so a short press can never lose open work.
@@ -2168,6 +2744,34 @@ impl Session {
             // registry snapshot once a second. Comparing a handful of globals
             // costs nothing when nothing changed.
             self.reconcile_outputs();
+
+            // A display change that has not been confirmed inside fifteen
+            // seconds goes back to the arrangement that worked. This is the
+            // safety net for a resolution the monitor cannot show.
+            if let Some(pending) = self.app.st.display.pending.clone() {
+                if Instant::now() >= pending.deadline {
+                    self.app.st.display.pending = None;
+                    self.app.st.display.note = vec![
+                        "No confirmation: the previous display arrangement is back.".to_string(),
+                    ];
+                    let baseline = self.app.st.display.baseline.clone();
+                    if !baseline.is_empty() {
+                        self.display_apply(baseline, false);
+                    }
+                } else {
+                    // The countdown itself is on screen, so it has to be redrawn
+                    // once a second while it runs.
+                    if self.entry_index(Surface::Settings).is_some() {
+                        self.invalidate(Some(Surface::Settings));
+                    }
+                }
+            }
+            if let Some(until) = self.app.st.display.identify_until {
+                if Instant::now() >= until {
+                    self.app.st.display.identify_until = None;
+                    self.invalidate(None);
+                }
+            }
         }
         // `refresh` compares a cheap directory signature and rescans only when
         // a file was added, changed or removed.
@@ -2361,6 +2965,54 @@ fn url_encode(text: &str) -> String {
 // (and `refurb-shell --send`) drive the same actions as the interface.
 // ---------------------------------------------------------------------------
 
+/// Watch the wallpaper configuration file. The file manager's action and this
+/// shell both write it, so whichever route the user takes, every screen repaints
+/// without polling anything.
+fn spawn_wallpaper_watch(notify: impl Fn() + Send + 'static) {
+    std::thread::spawn(move || {
+        let Ok(mut inotify) = inotify::Inotify::init() else {
+            return;
+        };
+        let Some(path) = wallpaper::config_file() else {
+            return;
+        };
+        let Some(dir) = path.parent() else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(dir);
+        if inotify
+            .watches()
+            .add(
+                dir,
+                inotify::WatchMask::CREATE
+                    | inotify::WatchMask::CLOSE_WRITE
+                    | inotify::WatchMask::MOVED_TO,
+            )
+            .is_err()
+        {
+            return;
+        }
+        let mut buffer = [0u8; 2048];
+        loop {
+            match inotify.read_events_blocking(&mut buffer) {
+                Ok(mut events) => {
+                    let touched = events.any(|event| {
+                        event
+                            .name
+                            .as_ref()
+                            .map(|name| name.to_string_lossy() == "wallpaper")
+                            .unwrap_or(false)
+                    });
+                    if touched {
+                        notify();
+                    }
+                }
+                Err(_) => return,
+            }
+        }
+    });
+}
+
 fn ipc_path() -> PathBuf {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
@@ -2432,6 +3084,10 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Session {
                     session.outputs.len()
                 ));
                 session.rebuild_screens();
+                // A screen that just arrived gets its saved arrangement back,
+                // or a sensible default next to the existing ones.
+                session.spawn_display_restore();
+                session.spawn_displays();
             }
             wl_registry::Event::GlobalRemove { name } => {
                 let Some(pos) = session.output_globals.iter().position(|(n, _)| *n == name) else {
@@ -2446,6 +3102,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Session {
                     session.outputs.len()
                 ));
                 session.rebuild_screens();
+                session.spawn_displays();
             }
             _ => {}
         }
@@ -2457,7 +3114,58 @@ delegate_noop!(Session: ignore wp_cursor_shape_manager_v1::WpCursorShapeManagerV
 delegate_noop!(Session: ignore wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
 delegate_noop!(Session: ignore wl_shm::WlShm);
 delegate_noop!(Session: ignore wl_shm_pool::WlShmPool);
-delegate_noop!(Session: ignore wl_output::WlOutput);
+
+impl Dispatch<wl_output::WlOutput, ()> for Session {
+    fn event(
+        session: &mut Self,
+        output: &wl_output::WlOutput,
+        event: wl_output::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        // wl_output version 4 carries the connector name. Matching it to the
+        // name `wlr-randr` prints is what lets "main display" mean the screen
+        // the user pointed at rather than whichever came first.
+        match event {
+            wl_output::Event::Name { name } => {
+                let id = output.id().protocol_id();
+                if session.output_names.get(&id) != Some(&name) {
+                    session.output_names.insert(id, name);
+                    if session.primary_index() != session.app.st.display.primary {
+                        session.rebuild_screens();
+                    }
+                }
+            }
+            // A resolution change leaves the frame drawn for the previous size.
+            // Repainting every surface is enough: the wallpaper reads its size
+            // from the pixmap it is about to fill, and layer surfaces get the
+            // new size from their configure. Recreating the surfaces here was
+            // tried and removed - it churned layer surfaces while windows were
+            // open, which is not worth the flicker for a rare event.
+            wl_output::Event::Mode {
+                flags,
+                width,
+                height,
+                ..
+            } => {
+                if let wayland_client::WEnum::Value(flags) = flags {
+                    if flags.contains(wl_output::Mode::Current) {
+                        let id = output.id().protocol_id();
+                        session
+                            .output_sizes
+                            .insert(id, (width.max(1) as u32, height.max(1) as u32));
+                        session.invalidate(None);
+                    }
+                }
+            }
+            wl_output::Event::Geometry { .. } | wl_output::Event::Scale { .. } => {
+                session.invalidate(None);
+            }
+            _ => {}
+        }
+    }
+}
 delegate_noop!(Session: ignore zwlr_layer_shell_v1::ZwlrLayerShellV1);
 
 impl Dispatch<wl_buffer::WlBuffer, Arc<AtomicBool>> for Session {
@@ -2574,6 +3282,10 @@ impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, Surface> for Session {
                     }
                     session.surfaces[index].configured = true;
                 }
+                // A new size needs a new buffer, and the two cached buffers
+                // may still be in flight. Queue it as well so a busy frame is
+                // retried rather than frozen at the previous resolution.
+                session.invalidate(Some(*id));
                 session.redraw(*id);
             }
             zwlr_layer_surface_v1::Event::Closed => {

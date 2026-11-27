@@ -6,8 +6,10 @@
 
 mod apps;
 mod desktop;
+mod displays;
 mod icons;
 mod keys;
+mod prefs;
 mod preview;
 mod reaper;
 mod render;
@@ -28,7 +30,12 @@ USAGE:
   refurb-shell --render-preview DIR
                                    render every screen to PNG files in DIR
   refurb-shell --send COMMAND      tell a running shell what to do
-                                   (launcher, quick, settings, lock, power, quit)
+                                   (launcher, quick, settings, display, identify,
+                                    lock, power, quit)
+  refurb-shell --wallpaper-set FILE
+                                   use a picture as the desktop wallpaper; the
+                                   picture is copied into the user's own
+                                   collection first, so the original can move
   refurb-shell --version
   refurb-shell --help
 
@@ -54,6 +61,22 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("refurb-shell: could not render preview: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some("--wallpaper-set") => {
+            let Some(source) = args.get(1) else {
+                eprintln!("refurb-shell: --wallpaper-set needs an image file");
+                std::process::exit(2);
+            };
+            match wallpaper::install(std::path::Path::new(source)).and_then(|wall| {
+                wallpaper::activate(&wall).map_err(|e| e.to_string())?;
+                Ok(wall)
+            }) {
+                Ok(wall) => println!("Wallpaper set to {}", wall.path().display()),
+                Err(e) => {
+                    eprintln!("refurb-shell: could not set the wallpaper: {e}");
                     std::process::exit(1);
                 }
             }

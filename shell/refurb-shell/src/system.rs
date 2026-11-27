@@ -1044,70 +1044,14 @@ pub fn lock_screen() {
 // display
 // ---------------------------------------------------------------------------
 
-/// Outputs and modes as reported by `wlr-randr` (labwc implements
-/// `zwlr_output_management_v1`, so this is the compositor's own view).
-pub fn displays() -> Vec<crate::ui::DisplayOutput> {
-    let Some(text) = run("wlr-randr", &[]) else {
-        return Vec::new();
-    };
-    let mut out: Vec<crate::ui::DisplayOutput> = Vec::new();
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if !line.starts_with(' ') {
-            let name = line.split_whitespace().next().unwrap_or_default().to_string();
-            if !name.is_empty() {
-                out.push(crate::ui::DisplayOutput {
-                    name,
-                    modes: Vec::new(),
-                    current: None,
-                });
-            }
-            continue;
-        }
-        let trimmed = line.trim_start();
-        if !trimmed.contains(" px")
-            || !trimmed
-                .chars()
-                .next()
-                .map(|c| c.is_ascii_digit())
-                .unwrap_or(false)
-        {
-            continue;
-        }
-        let size = trimmed.split(" px").next().unwrap_or_default().trim().to_string();
-        if size.is_empty() {
-            continue;
-        }
-        let is_current = trimmed.contains("current");
-        if let Some(out) = out.last_mut() {
-            if is_current {
-                out.current = Some(size.clone());
-            }
-            if !out.modes.contains(&size) {
-                out.modes.push(size);
-            }
-        }
-    }
-    for out in &mut out {
-        if out.current.is_none() {
-            out.current = out.modes.first().cloned();
-        }
-    }
-    out
-}
-
-pub fn set_display_mode(output: &str, mode: &str) -> Result<(), String> {
-    let res = Command::new("wlr-randr")
-        .args(["--output", output, "--mode", mode])
-        .stdin(Stdio::null())
-        .stderr(Stdio::piped())
-        .output();
-    match res {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
-        Err(e) => Err(e.to_string()),
+/// Outputs, modes, positions and identity as reported by `wlr-randr` (labwc
+/// implements `zwlr_output_management_v1`, so this is the compositor's own
+/// view). The parsing lives in `displays.rs`, where it is unit-tested against
+/// real output from a laptop and a television.
+pub fn displays() -> Vec<crate::displays::Output> {
+    match run("wlr-randr", &[]) {
+        Some(text) => crate::displays::parse(&text),
+        None => Vec::new(),
     }
 }
 

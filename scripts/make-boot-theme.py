@@ -98,15 +98,23 @@ def mark(draw: ImageDraw.ImageDraw, x: int, y: int, size: int) -> None:
     )
 
 
-def background(width: int, height: int) -> Image.Image:
+def background(width: int, height: int, wordmark: str = "left") -> Image.Image:
     img = gradient(width, height).convert("RGBA")
     glow(img, (int(width * 0.82), int(height * 0.72)), int(width * 0.42), MINT, 26)
     glow(img, (int(width * 0.12), int(height * 0.18)), int(width * 0.3), CLAY, 14)
     hairlines(img, width, height)
     draw = ImageDraw.Draw(img)
 
-    left = int(width * 0.08)
-    top = int(height * 0.11)
+    # The BIOS menu (vesamenu) always prints its entries from the top-left
+    # corner, so the isolinux backdrop puts the wordmark bottom-right where no
+    # entry can overlap it. GRUB's themed menu is positioned by theme.txt and
+    # keeps the wordmark at the top-left.
+    if wordmark == "right":
+        left = int(width * 0.56)
+        top = int(height * 0.80)
+    else:
+        left = int(width * 0.08)
+        top = int(height * 0.11)
     scale = width / 1920
     mark(draw, left, top, int(46 * scale))
     title = font("Inter-SemiBold.ttf", int(56 * scale))
@@ -130,13 +138,14 @@ def background(width: int, height: int) -> Image.Image:
         fill=CLAY + (170,),
         width=max(int(2 * scale), 1),
     )
-    foot = font("Inter-Regular.ttf", int(18 * scale))
-    draw.text(
-        (left, height - int(64 * scale)),
-        "Choose an entry with the arrow keys, then press Enter.",
-        font=foot,
-        fill=(SOFT[0], SOFT[1], SOFT[2]),
-    )
+    if wordmark != "right":
+        foot = font("Inter-Regular.ttf", int(18 * scale))
+        draw.text(
+            (left, height - int(64 * scale)),
+            "Choose an entry with the arrow keys, then press Enter.",
+            font=foot,
+            fill=(SOFT[0], SOFT[1], SOFT[2]),
+        )
     return img.convert("RGB")
 
 
@@ -175,7 +184,7 @@ def select_slices() -> dict[str, Image.Image]:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     background(1920, 1080).save(OUT / "background.png", optimize=True)
-    background(1024, 768).save(OUT / "isolinux.png", optimize=True)
+    background(1024, 768, wordmark="right").save(OUT / "isolinux.png", optimize=True)
     for name, img in select_slices().items():
         img.save(OUT / name, optimize=True)
     print(f"boot theme written to {OUT}")

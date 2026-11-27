@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Action
+Name=Set as Desktop Wallpaper
+Name[en_GB]=Set as Desktop Wallpaper
+Tooltip=Use this picture as the desktop background
+Icon=preferences-desktop-wallpaper
+Profiles=wallpaper;
+
+[X-Action-Profile wallpaper]
+Name=Set as Desktop Wallpaper
+MimeTypes=image/png;image/jpeg;image/jpg;image/webp;image/bmp;image/gif;image/tiff;
+SelectionCount=1
+Exec=/usr/lib/refurb/refurb-wallpaper %f

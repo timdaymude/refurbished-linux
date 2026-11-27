@@ -299,11 +299,108 @@ if [ -f "$DISTRO/config/boot-theme/theme.txt" ] && \
 else
     err "the boot theme is not wired into the image"
 fi
-if grep -q 'set theme=' "$ROOT/scripts/mkiso.sh" && \
-   grep -q 'if \[ -f ($root)/boot/grub/themes/reawakening/theme.txt \]' "$ROOT/scripts/mkiso.sh"; then
-    ok "GRUB keeps its text menu when the theme cannot be read"
+# The UEFI image deliberately runs GRUB's own text menu: on GRUB 2.12 the
+# gfxmenu theme drew its frame and countdown bar but no entry text, which left
+# a black panel with nothing to choose. The check therefore asserts the plain
+# menu (no theme set on the UEFI side) and the documented reason.
+if ! grep -q 'set theme=' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'No gfxmenu theme on UEFI' "$ROOT/scripts/mkiso.sh"; then
+    ok "the UEFI menu is GRUB's own text menu, with the reason recorded"
 else
-    err "the graphical menu has no guarded fallback"
+    err "the UEFI menu is neither themed nor documented as text"
+fi
+
+echo "== r17: more wallpapers, a right-click route, screens and the clock"
+# Every id in the shell's catalogue must have a picture in the repository, or
+# the Appearance page offers a thumbnail that cannot be drawn.
+missing=""
+for file in $(grep -o 'reawakening-[a-z]*\.\(png\|jpg\)' "$ROOT/shell/refurb-shell/src/wallpaper.rs" | sort -u); do
+    [ -f "$ROOT/assets/wallpapers/$file" ] || missing="$missing $file"
+done
+if [ -z "$missing" ] && [ "$(ls "$ROOT/assets/wallpapers" | wc -l)" -ge 6 ]; then
+    ok "every catalogue entry has artwork, and at least six pictures ship"
+else
+    err "the wallpaper catalogue and assets/wallpapers disagree:$missing"
+fi
+if grep -q 'assets/wallpapers/\*\.png' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'assets/wallpapers/\*\.jpg' "$ROOT/scripts/mkiso.sh"; then
+    ok "the ISO installs every picture, not a hand-written pair"
+else
+    err "the ISO would install only some of the wallpapers"
+fi
+if [ -x "$INC/usr/lib/refurb/refurb-wallpaper" ] && \
+   grep -q 'refurb-shell --wallpaper-set' "$INC/usr/lib/refurb/refurb-wallpaper" && \
+   grep -q '^Exec=/usr/lib/refurb/refurb-wallpaper %f$' \
+        "$INC/usr/share/file-manager/actions/set-wallpaper.desktop" && \
+   grep -q 'image/jpeg' "$INC/usr/share/file-manager/actions/set-wallpaper.desktop" && \
+   [ -f "$INC/etc/skel/.local/share/file-manager/actions/set-wallpaper.desktop" ]; then
+    ok "Files can set a wallpaper by right click, through the same command Settings uses"
+else
+    err "the file manager action or its helper is missing"
+fi
+if grep -q '^libnotify-bin$' "$DISTRO/config/package-lists/refurb-desktop.list.chroot"; then
+    ok "the file manager action can report success or failure"
+else
+    err "notify-send is not installed, so the action would fail silently"
+fi
+if grep -q 'wallpaper-set' "$ROOT/shell/refurb-shell/src/main.rs" && \
+   grep -q 'spawn_wallpaper_watch' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   grep -q 'WallpaperChanged' "$ROOT/shell/refurb-shell/src/session/mod.rs"; then
+    ok "a wallpaper change reaches a running desktop without a restart"
+else
+    err "a wallpaper set from Files would not appear until the next login"
+fi
+if grep -q 'image = ' "$ROOT/shell/refurb-shell/Cargo.toml" && \
+   grep -q 'jpeg' "$ROOT/shell/refurb-shell/Cargo.toml" && \
+   grep -q 'webp' "$ROOT/shell/refurb-shell/Cargo.toml"; then
+    ok "PNG, JPEG and WebP pictures can be read by the shell itself"
+else
+    err "the shell has no decoder for the pictures people actually have"
+fi
+
+if [ -f "$ROOT/shell/refurb-shell/src/displays.rs" ] && \
+   grep -q 'wlr-randr' "$DISTRO/config/package-lists/refurb-desktop.list.chroot" && \
+   grep -q 'pub fn apply' "$ROOT/shell/refurb-shell/src/displays.rs" && \
+   grep -q 'same-as' "$ROOT/shell/refurb-shell/src/displays.rs"; then
+    ok "the display panel configures the compositor through wlr-randr"
+else
+    err "display arrangement has no way to reach the compositor"
+fi
+if grep -q 'reawakening/displays' "$ROOT/shell/refurb-shell/src/displays.rs" && \
+   grep -q 'fn spawn_display_restore' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   grep -q 'DisplaysRestored' "$ROOT/shell/refurb-shell/src/session/mod.rs"; then
+    ok "a reconnected monitor gets its saved arrangement back, once, on a registry event"
+else
+    err "display arrangements would not survive a reconnect"
+fi
+if grep -q 'from_secs(15)' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   grep -q 'DisplayKeep' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   grep -q 'DisplayRevert' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   ! grep -q 'systemd.*refurb-display\|refurb-display.service' "$DISTRO/config/hooks/normal/0500-session.hook.chroot"; then
+    ok "a display change that is not confirmed reverts inside 15 seconds, with no daemon"
+else
+    err "display changes have no countdown or no way back"
+fi
+
+if grep -q 'prefs::Clock' "$ROOT/shell/refurb-shell/src/ui/settings.rs" && \
+   grep -q 'reawakening/clock' "$ROOT/shell/refurb-shell/src/prefs.rs" && \
+   grep -q 'ClockFormat' "$ROOT/shell/refurb-shell/src/session/mod.rs"; then
+    ok "the 12/24-hour clock is a saved setting, not a hard-coded format"
+else
+    err "the clock style cannot be chosen or remembered"
+fi
+if grep -q 'left = 20%' "$DISTRO/config/boot-theme/theme.txt" && \
+   grep -q 'top = 40%' "$DISTRO/config/boot-theme/theme.txt" && \
+   grep -q 'GRUB_GFXMODE=auto,1920x1080' "$INC/etc/default/grub" && \
+   grep -q '1366x768' "$ROOT/scripts/mkiso.sh"; then
+    ok "the boot menu is laid out in percentages with fallback resolutions"
+else
+    err "the boot menu still assumes one screen size"
+fi
+if grep -q 'wordmark == "right"' "$ROOT/scripts/make-boot-theme.py"; then
+    ok "the BIOS backdrop keeps its wordmark clear of the entry list"
+else
+    err "the BIOS backdrop wordmark can overlap the menu entries"
 fi
 
 echo "== no update daemon, packagekit or indexer is enabled"

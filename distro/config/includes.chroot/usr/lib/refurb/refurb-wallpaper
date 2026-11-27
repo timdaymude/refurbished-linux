@@ -1,0 +1,40 @@
+#!/bin/sh
+# Set a picture as the desktop wallpaper, from the file manager's right-click
+# menu or from a terminal.
+#
+# The picture is copied into the user's own collection by `refurb-shell
+# --wallpaper-set` before it is used, so a photograph on a USB drive keeps
+# working after the drive is unplugged, and the original is never moved or
+# changed. The desktop repaints itself through its watch on the configuration
+# file, so this command returns immediately even with the session running.
+set -u
+
+if [ "$#" -lt 1 ] || [ -z "$1" ]; then
+    # Also installed as an application so the file manager can offer it under
+    # "Open With". Started without a picture (from the launcher, or by opening
+    # the application itself) it opens the chooser instead of failing.
+    refurb-shell --send appearance >/dev/null 2>&1 || \
+        notify-send -a Wallpaper "Wallpaper" \
+            "Open Settings - Appearance to choose a picture." 2>/dev/null || true
+    printf 'usage: refurb-wallpaper PICTURE\n' >&2
+    exit 0
+fi
+
+source_file=$1
+if [ ! -f "$source_file" ]; then
+    notify-send -a Wallpaper "Could not set the wallpaper" \
+        "$source_file is not a file that can be read." 2>/dev/null || true
+    echo "refurb-wallpaper: $source_file is not a readable file" >&2
+    exit 1
+fi
+
+if output=$(refurb-shell --wallpaper-set "$source_file" 2>&1); then
+    notify-send -a Wallpaper "Wallpaper changed" \
+        "$(basename "$source_file") is now the desktop background." 2>/dev/null || true
+    printf '%s\n' "$output"
+else
+    notify-send -a Wallpaper "Could not use this picture" \
+        "$output" 2>/dev/null || true
+    printf '%s\n' "$output" >&2
+    exit 1
+fi

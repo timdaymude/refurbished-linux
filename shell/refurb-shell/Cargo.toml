@@ -11,9 +11,10 @@ license = "GPL-3.0-or-later"
 tiny-skia = "0.11"
 fontdue = "0.9"
 
-# Wallpapers: the two shipped PNGs are decoded in the shell. Pure Rust, so no
-# image tools are needed on the build host or in the image.
-png = "0.17"
+# Wallpapers: the built-in pictures and any picture the user brings (PNG,
+# JPEG, WebP) are decoded in the shell. Pure Rust, so no image tools are needed
+# on the build host or in the image, and no thumbnail service runs at login.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 
 # Session (Wayland) support. Optional so the UI can be built, tested and
 # rendered headlessly on machines without Wayland libraries.

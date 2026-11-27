@@ -21,6 +21,10 @@ nm-connection-editor
 blueman
 pavucontrol
 mako-notifier
+# notify-send: the file manager's "Set as Desktop Wallpaper" action reports
+# success or failure in a notification, because a menu action has no terminal
+# to print to. libnotify only; no daemon of its own.
+libnotify-bin
 # Seat management without a display manager or a logind graphical session:
 # libseat's seatd backend hands the compositor DRM and VT access directly.
 # About 1 MB resident, and it replaces a display manager entirely.

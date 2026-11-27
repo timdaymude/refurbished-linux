@@ -11,5 +11,8 @@ GRUB_DISTRIBUTOR="Reawakening OS"
 GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 GRUB_CMDLINE_LINUX=""
 GRUB_THEME="/boot/grub/themes/reawakening/theme.txt"
-GRUB_GFXMODE=auto
+# auto is the panel's own preferred mode, which is the sharpest choice on a
+# laptop; the explicit modes are the fallbacks the theme is known to fit. The
+# menu itself is laid out in percentages, so any of them is readable.
+GRUB_GFXMODE=auto,1920x1080,1366x768,1024x768,800x600
 GRUB_GFXPAYLOAD_LINUX=keep

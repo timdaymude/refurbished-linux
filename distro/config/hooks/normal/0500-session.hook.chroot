@@ -90,7 +90,8 @@ for program in /usr/lib/refurb/refurb-update \
                /usr/lib/refurb/osd-start /usr/lib/refurb/tty1-autologin \
                /usr/lib/refurb/refurb-diag /usr/lib/refurb/refurb-keys \
                /usr/lib/refurb/refurb-cockpit /usr/lib/refurb/session-inhibit \
-               /usr/lib/refurb/memory-report /usr/bin/refurb-session; do
+               /usr/lib/refurb/memory-report /usr/lib/refurb/refurb-wallpaper \
+               /usr/bin/refurb-session; do
     [ -f "$program" ] && chmod 0755 "$program"
 done
 # One name for the hardware controls, callable from a terminal and from the
@@ -127,4 +128,20 @@ for account in refurb user; do
         getent group "$group" >/dev/null 2>&1 && usermod -aG "$group" "$account" || true
     done
 done
+
+# PCManFM reads custom actions from the user's own data directory, which the
+# account created above already has. /etc/skel only helps accounts made later:
+# measured in r17, the action was in /usr/share/file-manager/actions and listed
+# by the file manager, but the right-click menu on a picture did not show it,
+# because the live account's home predates the file. Copy it into every home
+# that exists at build time, keeping the home's own owner.
+action=/usr/share/file-manager/actions/set-wallpaper.desktop
+if [ -f "$action" ]; then
+    for home in /root /home/*; do
+        [ -d "$home" ] || continue
+        install -D -m 0644 "$action" \
+            "$home/.local/share/file-manager/actions/set-wallpaper.desktop"
+        chown -R "$(stat -c %u:%g "$home")" "$home/.local/share/file-manager" 2>/dev/null || true
+    done
+fi
 

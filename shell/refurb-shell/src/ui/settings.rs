@@ -3,9 +3,10 @@
 
 use tiny_skia::Rect;
 
+use crate::prefs;
 use crate::system::PowerAction;
 use crate::text::{MEDIUM, REGULAR, SEMIBOLD};
-use crate::wallpaper::{self, Choice as Wallpaper};
+use crate::wallpaper;
 use crate::{icons, render, theme};
 
 use super::widgets::{self, Ctx};
@@ -86,7 +87,7 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     }
 }
 
-fn heading(cx: &mut Ctx, pane: Rect, title: &str, subtitle: &str) -> f32 {
+pub(crate) fn heading(cx: &mut Ctx, pane: Rect, title: &str, subtitle: &str) -> f32 {
     cx.t(pane.x() + 20.0, pane.y() + 18.0, 26.0, title, theme::T_HEAD, SEMIBOLD, theme::ink());
     cx.t(
         pane.x() + 20.0,
@@ -100,7 +101,7 @@ fn heading(cx: &mut Ctx, pane: Rect, title: &str, subtitle: &str) -> f32 {
     pane.y() + 74.0
 }
 
-fn paragraph(cx: &mut Ctx, pane: Rect, y: &mut f32, text: &str) {
+pub(crate) fn paragraph(cx: &mut Ctx, pane: Rect, y: &mut f32, text: &str) {
     let max = pane.width() - 40.0;
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -356,98 +357,49 @@ fn remote(cx: &mut Ctx, pane: Rect) {
 }
 
 fn display(cx: &mut Ctx, pane: Rect) {
-    let st = cx.st;
-    let mut y = heading(cx, pane, "Display", "Resolution and rotation, applied immediately.");
-    if st.display.outputs.is_empty() {
-        paragraph(
-            cx,
-            pane,
-            &mut y,
-            "No display information available yet. This panel reads `wlr-randr` \
-             when it opens; on a machine without a Wayland session it stays empty.",
-        );
-        widgets::button(
-            cx,
-            render::rect(pane.x() + 20.0, y + 10.0, 132.0, 32.0),
-            "Refresh",
-            widgets::Style::Secondary,
-            Action::Section(Section::Display),
-        );
-        return;
-    }
-    let out = &st.display.outputs[st.display.selected.min(st.display.outputs.len() - 1)];
-    cx.t(
-        pane.x() + 20.0,
-        y,
-        22.0,
-        &format!("Output: {}", out.name),
-        theme::T_BODY,
-        SEMIBOLD,
-        theme::ink(),
-    );
-    y += 28.0;
-    widgets::section_label(cx, pane.x() + 20.0, y, "Available modes");
-    y += 20.0;
-    let col_w = (pane.width() - 40.0) / 3.0;
-    for (i, mode) in out.modes.iter().take(9).enumerate() {
-        let col = i % 3;
-        let row = i / 3;
-        let r = render::rect(
-            pane.x() + 20.0 + col as f32 * col_w,
-            y + row as f32 * 38.0,
-            col_w - 8.0,
-            32.0,
-        );
-        let current = out.current.as_deref() == Some(mode.as_str());
-        widgets::button(
-            cx,
-            r,
-            mode,
-            if current { widgets::Style::Primary } else { widgets::Style::Secondary },
-            Action::DisplayMode(i),
-        );
-    }
-    cx.t(
-        pane.x() + 20.0,
-        pane.bottom() - 34.0,
-        18.0,
-        "Scaling stays at 100% to keep the compositor cheap on old GPUs.",
-        theme::T_SMALL,
-        REGULAR,
-        theme::ink_faint(),
-    );
+    super::display::draw(cx, pane);
 }
 
-/// Wallpapers: the two pictures that ship in the image, shown as thumbnails so
-/// the choice is made by looking at them rather than by reading file names.
+/// Appearance: every picture the desktop can paint, as thumbnails, plus the
+/// file manager route for anything not listed and the clock style.
+///
+/// Both wallpaper routes — this page and "Set as Desktop Wallpaper" in Files —
+/// end in the same place: a managed copy under `~/.local/share/reawakening` and
+/// one line in `~/.config/reawakening/wallpaper`.
 fn appearance(cx: &mut Ctx, pane: Rect) {
-    let current = cx.st.wallpaper;
+    let current = cx.st.wallpaper.clone();
     let mut y = heading(
         cx,
         pane,
         "Appearance",
-        "Two wallpapers, drawn by the session at every screen's own resolution.",
+        "Wallpapers are drawn by the session at every screen's own resolution.",
     );
-    let gap = 14.0;
-    let card_w = (pane.width() - 40.0 - gap) / 2.0;
-    let thumb_h = (card_w * 0.56).clamp(90.0, (pane.bottom() - y - 96.0).max(90.0));
-    for (i, choice) in Wallpaper::ALL.iter().enumerate() {
+    let entries = &cx.st.wallpapers;
+    let gap = 8.0;
+    let cols = 4usize;
+    let card_w = (pane.width() - 40.0 - gap * (cols as f32 - 1.0)) / cols as f32;
+    let thumb_h = (card_w * 0.54).clamp(58.0, 104.0);
+    let card_h = thumb_h + 30.0;
+    let mut hovered: Option<String> = None;
+    for (i, entry) in entries.iter().take(cols * 2).enumerate() {
+        let col = i % cols;
+        let row = i / cols;
         let card = render::rect(
-            pane.x() + 20.0 + i as f32 * (card_w + gap),
-            y,
+            pane.x() + 20.0 + col as f32 * (card_w + gap),
+            y + row as f32 * (card_h + gap),
             card_w,
-            thumb_h + 48.0,
+            card_h,
         );
-        let active = *choice == current;
+        let active = entry.wallpaper == current;
         render::round(cx.pm, card, theme::RADIUS_SM, theme::well());
-        let thumb = render::rect(card.x() + 6.0, card.y() + 6.0, card.width() - 12.0, thumb_h);
-        if !wallpaper::draw_into(cx.pm, *choice, thumb) {
+        let thumb = render::rect(card.x() + 5.0, card.y() + 5.0, card.width() - 10.0, thumb_h);
+        if !wallpaper::draw_into(cx.pm, &entry.wallpaper, thumb) {
             render::round(cx.pm, thumb, 4.0, theme::line_soft());
             cx.t(
-                thumb.x() + 10.0,
+                thumb.x() + 8.0,
                 thumb.y(),
                 thumb.height(),
-                "image not installed",
+                "not installed",
                 theme::T_SMALL,
                 REGULAR,
                 theme::ink_faint(),
@@ -460,40 +412,125 @@ fn appearance(cx: &mut Ctx, pane: Rect) {
             if active { theme::accent() } else { theme::line() },
             if active { 1.6 } else { 1.0 },
         );
+        let label_w = if active { card.width() - 68.0 } else { card.width() - 14.0 };
+        let label = cx.ellip(&entry.label, theme::T_SMALL, MEDIUM, label_w);
         cx.t(
-            card.x() + 10.0,
-            thumb.bottom() + 6.0,
-            20.0,
-            choice.label(),
-            theme::T_BODY,
+            card.x() + 7.0,
+            thumb.bottom() + 3.0,
+            18.0,
+            &label,
+            theme::T_SMALL,
             MEDIUM,
             theme::ink(),
         );
         if active {
-            let badge = render::rect(card.right() - 62.0, thumb.bottom() + 7.0, 52.0, 18.0);
-            render::round(cx.pm, badge, 6.0, theme::accent());
-            cx.tc(
-                badge.x(),
-                badge.width(),
-                badge.y() + 2.0,
-                14.0,
+            widgets::badge_right(
+                cx,
+                card.right() - 5.0,
+                thumb.bottom() + 4.0,
                 "In use",
-                theme::T_SMALL - 1.5,
-                MEDIUM,
                 theme::on_accent(),
+                theme::accent(),
             );
+        }
+        if cx.hot(card) {
+            hovered = Some(entry.blurb.clone());
         }
         cx.hit(card, Action::Wallpaper(i));
     }
-    y += thumb_h + 62.0;
-    paragraph(
+    let rows = entries.len().min(cols * 2).div_ceil(cols).max(1);
+    y += rows as f32 * (card_h + gap) + 2.0;
+
+    if !current.is_builtin() && !current.exists() {
+        cx.t(
+            pane.x() + 20.0,
+            y,
+            18.0,
+            "The picture you chose is no longer there. Pick another one.",
+            theme::T_SMALL,
+            MEDIUM,
+            theme::clay(),
+        );
+        y += 20.0;
+    } else if entries.len() > cols * 2 {
+        cx.t(
+            pane.x() + 20.0,
+            y,
+            18.0,
+            &format!(
+                "{} more of your own pictures are in Files.",
+                entries.len() - cols * 2
+            ),
+            theme::T_SMALL,
+            REGULAR,
+            theme::ink_faint(),
+        );
+        y += 20.0;
+    }
+
+    // ---- your own picture -------------------------------------------------
+    widgets::button(
         cx,
-        pane,
-        &mut y,
-        &format!(
-            "{} The choice is remembered for this account and applied to every connected screen.",
-            current.blurb()
-        ),
+        render::rect(pane.x() + 20.0, y, 168.0, 30.0),
+        "Choose a picture…",
+        widgets::Style::Secondary,
+        Action::WallpaperBrowse,
+    );
+    cx.t(
+        pane.x() + 198.0,
+        y,
+        30.0,
+        "or right-click a picture in Files → Open With → Set as Desktop Wallpaper",
+        theme::T_SMALL - 0.5,
+        REGULAR,
+        theme::ink_faint(),
+    );
+    y += 40.0;
+
+    // ---- the clock --------------------------------------------------------
+    widgets::divider(cx, pane.x() + 20.0, y, pane.width() - 40.0);
+    y += 10.0;
+    widgets::section_label(cx, pane.x() + 20.0, y, "Clock");
+    y += 17.0;
+    // The hovered picture explains itself in one line, in the space the clock
+    // row leaves. That is more useful than a fixed caption and costs no room.
+    if let Some(blurb) = hovered {
+        let line = cx.ellip(&blurb, theme::T_SMALL - 0.5, REGULAR, pane.width() - 40.0);
+        cx.t(
+            pane.x() + 20.0,
+            y - 4.0,
+            16.0,
+            &line,
+            theme::T_SMALL - 0.5,
+            REGULAR,
+            theme::ink_faint(),
+        );
+    }
+    let mut bx = pane.x() + 20.0;
+    for style in prefs::Clock::ALL {
+        let w = if style == prefs::Clock::H12 { 138.0 } else { 132.0 };
+        widgets::button(
+            cx,
+            render::rect(bx, y, w, 28.0),
+            style.label(),
+            if style == cx.st.clock_format {
+                widgets::Style::Primary
+            } else {
+                widgets::Style::Secondary
+            },
+            Action::ClockFormat(style),
+        );
+        bx += w + 8.0;
+    }
+    let sample = prefs::format_time(17, 5, cx.st.clock_format);
+    cx.t(
+        bx + 4.0,
+        y,
+        28.0,
+        &format!("Example: {sample}"),
+        theme::T_SMALL,
+        REGULAR,
+        theme::ink_faint(),
     );
 }
 

@@ -7,17 +7,20 @@
 pub mod bar;
 pub mod deskicons;
 pub mod dialog;
+pub mod display;
 pub mod launcher;
 pub mod quick;
 pub mod settings;
 pub mod widgets;
+
+use std::time::Instant;
 
 use tiny_skia::{Color, Pixmap, Rect};
 
 use crate::apps::{self, App as DesktopApp};
 use crate::system::{BtDevice, BtStatus, PowerAction, WifiNetwork, WifiSec};
 use crate::text::TextEngine;
-use crate::{icons, render, theme, wallpaper};
+use crate::{displays, icons, prefs, render, theme, wallpaper};
 
 pub use widgets::Ctx;
 
@@ -192,9 +195,35 @@ pub enum Action {
     RemoteCopy(usize),
     /// Open this computer's own Cockpit page in Brave.
     RemoteOpen,
-    DisplayMode(usize),
-    /// Pick one of the two shipped wallpapers, by index in `wallpaper::Choice::ALL`.
+    /// Choose a picture by index in the catalogue the panel is showing.
     Wallpaper(usize),
+    /// Open the user's pictures in the file manager, where the same picture can
+    /// be set with a right click.
+    WallpaperBrowse,
+    /// Switch the bar clock between 24-hour and 12-hour.
+    ClockFormat(prefs::Clock),
+    /// Select one display's row in Settings → Display.
+    DisplaySelect(usize),
+    /// Switch one display on or off (staged, then applied).
+    DisplayToggle(usize),
+    /// Pick a mode for the selected display, by index in its mode list.
+    DisplayMode(usize),
+    /// Make a display the one that carries the desktop icons.
+    DisplayMain(usize),
+    /// Show a large number on every screen for a few seconds.
+    DisplayIdentify,
+    /// Mirror the selected display on the main one, or stop mirroring it.
+    DisplayMirror,
+    /// Start dragging a display's rectangle in the arrangement diagram.
+    DisplayGrab(usize),
+    /// Apply the staged arrangement, then ask for confirmation.
+    DisplayApply,
+    /// Keep the arrangement before the countdown runs out.
+    DisplayKeep,
+    /// Put the previous arrangement back now.
+    DisplayRevert,
+    /// Re-read the outputs from the compositor.
+    DisplayRefresh,
     Power(PowerAction),
     Lock,
     Quit,
@@ -243,18 +272,48 @@ pub struct BtUi {
     pub scanning: bool,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct DisplayOutput {
-    pub name: String,
-    pub modes: Vec<String>,
-    pub current: Option<String>,
+/// A display change that has been applied and is waiting for the user to say
+/// it is usable. If the countdown runs out, `baseline` goes back on.
+#[derive(Clone, Debug)]
+pub struct DisplayPending {
+    pub deadline: Instant,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DisplayUi {
-    pub outputs: Vec<DisplayOutput>,
+    pub outputs: Vec<displays::Output>,
     pub selected: usize,
+    /// Connector name of the display that carries the desktop icons.
+    pub main_name: String,
+    /// EDID identity of that display, which is what the profile file stores.
+    pub main_identity: Option<String>,
+    /// Index of the main display in `outputs`.
+    pub primary: usize,
+    /// Index of a display mirrored on the main one, if any.
+    pub mirrored: Option<usize>,
+    /// Until this moment every screen shows its own number.
+    pub identify_until: Option<Instant>,
+    pub pending: Option<DisplayPending>,
+    /// The arrangement that worked before the pending change, as `wlr-randr`
+    /// arguments. Reverting is one apply of this list.
+    pub baseline: Vec<displays::Setup>,
+    pub note: Vec<String>,
+    pub loading: bool,
 }
+
+impl DisplayUi {
+    pub fn load() -> DisplayUi {
+        let profiles = displays::profiles_path()
+            .map(|path| displays::Profiles::load(&path))
+            .unwrap_or_default();
+        DisplayUi {
+            main_identity: profiles.main.clone(),
+            ..DisplayUi::default()
+        }
+    }
+}
+
 
 /// What the session knows about Cockpit, read from `refurb-cockpit state` when
 /// the panel opens and after every change. The shell and the terminal command
@@ -320,6 +379,7 @@ pub struct State {
     pub remote: RemoteUi,
     pub display: DisplayUi,
     pub clock: String,
+    pub clock_format: prefs::Clock,
     pub weekday: String,
     pub today: String,
     pub hover: Option<(f32, f32)>,
@@ -329,7 +389,10 @@ pub struct State {
     pub updates_note: Vec<String>,
     pub version: String,
     /// The wallpaper the session is painting; see `crate::wallpaper`.
-    pub wallpaper: wallpaper::Choice,
+    pub wallpaper: wallpaper::Wallpaper,
+    /// Everything the Appearance page offers, built once when the panel opens
+    /// (and after a change), so a repaint never walks the filesystem.
+    pub wallpapers: Vec<wallpaper::Entry>,
     /// The files and shortcuts on `~/Desktop` and where they were left.
     pub desk: crate::desktop::State,
     /// "starting", "listening" or an error, while Alt+Z dictation is active.
@@ -359,6 +422,7 @@ impl Default for State {
             remote: RemoteUi::default(),
             display: DisplayUi::default(),
             clock: "--:--".into(),
+            clock_format: prefs::Clock::default(),
             weekday: String::new(),
             today: String::new(),
             hover: None,
@@ -367,7 +431,8 @@ impl Default for State {
             slider_brightness: render::rect(0.0, 0.0, 0.0, 0.0),
             updates_note: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            wallpaper: wallpaper::Choice::default(),
+            wallpaper: wallpaper::default_wallpaper(),
+            wallpapers: Vec::new(),
             desk: crate::desktop::State::default(),
             dictation: None,
         }
@@ -415,6 +480,10 @@ impl App {
             text: TextEngine::new(),
         };
         app.st.wallpaper = wallpaper::restore();
+        app.st.wallpapers = wallpaper::catalog();
+        app.st.clock_format = prefs::clock();
+        app.st.display = DisplayUi::load();
+        app.tick();
         app.reload_apps();
         app.refresh_status();
         app.tick();
@@ -465,12 +534,26 @@ impl App {
 
     /// Clock text; cheap enough to call every second.
     pub fn tick(&mut self) {
-        let (clock, weekday, today) = crackers_clock();
+        let (clock, weekday, today) = crackers_clock(self.st.clock_format);
         if self.st.clock != clock {
             self.st.clock = clock;
             self.st.weekday = weekday;
             self.st.today = today;
         }
+    }
+
+    /// Change the clock style and repaint the bar with it immediately.
+    pub fn set_clock_format(&mut self, format: prefs::Clock) {
+        self.st.clock_format = format;
+        let (clock, weekday, today) = crackers_clock(format);
+        self.st.clock = clock;
+        self.st.weekday = weekday;
+        self.st.today = today;
+    }
+
+    /// Rebuild the wallpaper list (built-ins plus the user's own pictures).
+    pub fn reload_wallpapers(&mut self) {
+        self.st.wallpapers = wallpaper::catalog();
     }
 
     /// Launcher results for the current query.
@@ -505,8 +588,14 @@ impl App {
                 // The wallpaper is painted by the fill above. The primary
                 // screen also carries the desktop icons; a second screen gets
                 // the same wallpaper and no second set of files.
-                Surface::Desktop => deskicons::draw(&mut cx, w as f32, h as f32),
-                Surface::DesktopOn(_) => {}
+                Surface::Desktop => {
+                    deskicons::draw(&mut cx, w as f32, h as f32);
+                    identify(&mut cx, w as f32, h as f32);
+                }
+                Surface::DesktopOn(index) => {
+                    identify(&mut cx, w as f32, h as f32);
+                    let _ = index;
+                }
                 Surface::Bar | Surface::BarOn(_) => bar::draw(&mut cx, w as f32, h as f32),
                 Surface::Launcher => launcher::draw(&mut cx, w as f32, h as f32),
                 Surface::Quick => quick::draw(&mut cx, w as f32, h as f32),
@@ -638,9 +727,57 @@ pub fn paint_desktop_background(pm: &mut Pixmap) {
     );
 }
 
+/// A large number on every screen, so "which one is display 2?" is answered by
+/// looking at the screens instead of by unplugging one.
+fn identify(cx: &mut Ctx, w: f32, h: f32) {
+    let surface = cx.st.view;
+    let Some(until) = cx.st.display.identify_until else {
+        return;
+    };
+    if Instant::now() >= until {
+        return;
+    }
+    let index = match surface {
+        Surface::Desktop => cx.st.display.primary,
+        Surface::DesktopOn(index) => index as usize,
+        _ => 0,
+    };
+    let number = format!("{}", index + 1);
+    let name = cx
+        .st
+        .display
+        .outputs
+        .get(index)
+        .map(|o| o.name.clone())
+        .unwrap_or_default();
+    let band = render::rect(0.0, h * 0.32, w, h * 0.30);
+    render::fill(cx.pm, band, Color::from_rgba8(0x0C, 0x0D, 0x10, 0xC8));
+    let px = (h * 0.19).clamp(46.0, 190.0);
+    cx.tc(
+        0.0,
+        w,
+        band.y() + 2.0,
+        band.height() * 0.66,
+        &number,
+        px,
+        crate::text::SEMIBOLD,
+        theme::accent(),
+    );
+    cx.tc(
+        0.0,
+        w,
+        band.bottom() - 46.0,
+        30.0,
+        &format!("Display {number} · {name}"),
+        theme::T_LABEL,
+        crate::text::MEDIUM,
+        theme::ink(),
+    );
+}
+
 /// Local wall clock without pulling in a date/time crate: `localtime_r` is in
 /// the C library that every Rust binary already links against.
-fn crackers_clock() -> (String, String, String) {
+fn crackers_clock(format: prefs::Clock) -> (String, String, String) {
     #[repr(C)]
     struct Tm {
         tm_sec: i32,
@@ -684,7 +821,7 @@ fn crackers_clock() -> (String, String, String) {
         "January", "February", "March", "April", "May", "June", "July", "August", "September",
         "October", "November", "December",
     ];
-    let clock = format!("{:02}:{:02}", tm.tm_hour, tm.tm_min);
+    let clock = prefs::format_time(tm.tm_hour as u32, tm.tm_min as u32, format);
     let weekday = DAYS.get(tm.tm_wday as usize % 7).unwrap_or(&"").to_string();
     let today = format!(
         "{} {}",
@@ -700,11 +837,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clock_is_formatted() {
-        let (c, wd, _) = crackers_clock();
+    fn clock_is_formatted_in_both_styles() {
+        let (c, wd, _) = crackers_clock(prefs::Clock::H24);
         assert_eq!(c.len(), 5, "HH:MM");
         assert!(c.contains(':'));
         assert!(!wd.is_empty());
+        let (c, _, _) = crackers_clock(prefs::Clock::H12);
+        assert!(c.contains("AM") || c.contains("PM"), "{c} is not a 12-hour clock");
     }
 
     #[test]

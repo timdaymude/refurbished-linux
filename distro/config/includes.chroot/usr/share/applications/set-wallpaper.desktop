@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Set as Desktop Wallpaper
+Comment=Use this picture as the desktop background
+Exec=/usr/lib/refurb/refurb-wallpaper %f
+Icon=preferences-desktop-wallpaper
+MimeType=image/png;image/jpeg;image/webp;image/bmp;image/gif;image/tiff;
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=wallpaper;background;desktop;picture;

@@ -191,8 +191,10 @@ stage_configure() {
     # installed into the image here: an ISO build never depends on a copy that
     # only exists in a build tree.
     install -d "$ROOTFS/usr/share/backgrounds/reawakening"
-    install -m 644 "$ROOT/assets/wallpapers/reawakening-default.png" \
-                   "$ROOT/assets/wallpapers/reawakening-moonlight.png" \
+    # Every picture in assets/wallpapers is shipped; the catalogue in
+    # wallpaper.rs names them, and check-config.sh verifies the two lists match.
+    install -m 644 "$ROOT"/assets/wallpapers/*.png \
+                   "$ROOT"/assets/wallpapers/*.jpg \
                    "$ROOTFS/usr/share/backgrounds/reawakening/"
 
     # The boot menu theme. The installed system gets the same files the live
@@ -427,7 +429,7 @@ insmod all_video
 insmod gfxterm
 insmod gfxmenu
 insmod png
-set gfxmode=auto,1920x1080,1024x768
+set gfxmode=auto,1920x1080,1600x900,1366x768,1024x768,800x600
 loadfont ($prefix)/fonts/unicode.pf2
 terminal_output gfxterm
 
@@ -453,13 +455,12 @@ if [ "$live_found" = 0 ]; then
     fi
 fi
 
-# The theme is applied only after the medium is found, and only if the file is
-# there: a missing theme prints one error and leaves GRUB's plain text menu,
-# which still boots the machine. That is the fallback, on purpose.
-if [ -f ($root)/boot/grub/themes/reawakening/theme.txt ]; then
-    set theme=($root)/boot/grub/themes/reawakening/theme.txt
-    export theme
-fi
+# No gfxmenu theme on UEFI. On this GRUB (2.12, built standalone) the themed
+# menu drew its frame and countdown bar but never its entry text, leaving a
+# black panel with no visible entries - unusable on a UEFI-only machine.
+# GRUB's own text menu lists all three entries, so that is used here on
+# purpose: the artwork theme is the BIOS side's job (isolinux/vesamenu below)
+# and the plain menu is the documented text fallback for UEFI.
 
 menuentry "Start Reawakening OS" {
     linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
@@ -485,7 +486,7 @@ EOF
         # search_label: the --file and --label forms used above (plain
         # "search" alone only offers --fs-uuid).
         grub-mkstandalone --directory "$GRUB_MOD" -O x86_64-efi \
-            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm gfxmenu png font gfxterm_background" \
+            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm gfxmenu png font gfxterm_background ahci ata pata scsi usb usbms uhci ohci ehci" \
             --locales="" --fonts="unicode" --themes="" \
             --output="$WORK/bootx64.efi" \
             "boot/grub/grub.cfg=$WORK/grub-efi.cfg" || echo "grub-mkstandalone failed: BIOS-only ISO" >&2

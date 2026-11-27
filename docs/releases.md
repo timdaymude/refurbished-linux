@@ -23,6 +23,7 @@ full per-release report.
 | 0.3.0-r14 Calamares installer, Software Center removed **(prerelease)** | 1,205,600,256 | `37abc90b59923e42da88a0030be3a627b5b892f89b6358cfdca234b3ea905bb6` | `v0.3.0-r14` — `reawakening-os-0.3.0-r14-amd64.iso` | none (release is the copy) |
 | 0.3.0-r15 DDE Store, Cockpit remote fixed **(prerelease)** | 1,187,692,544 | `21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3` | `v0.3.0-r15` — `reawakening-os-0.3.0-r15-amd64.iso` | none (release is the copy) |
 | 0.3.0-r16 GNOME Software store, launcher discovery, boot theme, cursor and updater fixes **(prerelease)** | 1,237,876,736 | `2fb11d141a2d8d3354dd99acdc58b3c539513e54591a4a6249898534b55554e3` | `v0.3.0-r16` — `reawakening-os-0.3.0-r16-amd64.iso` | none (release is the copy) |
+| 0.3.0-r17 wallpapers, Set as Desktop Wallpaper, multi-monitor panel, 12/24-hour clock, boot menu scaling **(prerelease)** | 1,263,861,760 | `b6941bf5b57b5f9952d4df469fef8f31af720c9f6f05570d0a2c58737459395a` | `v0.3.0-r17` — `reawakening-os-0.3.0-r17-amd64.iso` | none (release is the copy) |
 
 ## Naming
 
@@ -36,6 +37,20 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r17**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified from the shipped ISO in QEMU (BIOS, `-cpu qemu64`, 2 GB): the
+  desktop and bar survive boot; Settings → Appearance shows six wallpapers and
+  applies one live; the 12-hour clock reads `3:14 AM`; Settings → Display lists
+  the QEMU output with its connector and six modes, applies 1920×1080 with
+  **Keep**, and reverts at 15 s when Keep is not pressed; right-clicking a
+  picture in Files → **Set as Desktop Wallpaper** changes the background
+  immediately with a toast; the BIOS menu shows the three entries clear of the
+  wordmark. The UEFI image now finds the medium on SATA/USB (storage drivers
+  added) and shows GRUB's text menu. A startup race that committed a buffer to
+  an unconfigured layer surface (black desktop, shell restarted every 2 s) was
+  found and fixed. Not verified: a full install and reboot without the medium,
+  two monitors on real hardware, and the themed UEFI menu (GRUB 2.12 draws no
+  entry text here, so UEFI uses the text fallback). Details in `round-17.md`.
 - **r16**: published as a prerelease with the ISO and its `.sha256` report.
   Verified from the shipped ISO in QEMU (BIOS and UEFI, TCG): the themed GRUB
   menu renders with branding, a clay selection and a five-second countdown; the

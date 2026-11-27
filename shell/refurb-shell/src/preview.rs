@@ -11,7 +11,8 @@ use tiny_skia::{BlendMode, FilterQuality, Pixmap, PixmapPaint, Transform};
 use crate::apps::App as DesktopApp;
 use crate::system::{BtDevice, BtStatus, WifiNetwork, WifiStatus};
 use crate::text::{TextEngine, REGULAR};
-use crate::ui::{self, App, DisplayOutput, Focus, Surface, Toplevel, WindowKind};
+use crate::displays::{Mode, Output};
+use crate::ui::{self, App, Focus, Surface, Toplevel, WindowKind};
 use crate::{icons, render, theme};
 
 fn paint(base: &mut Pixmap, top: &Pixmap, x: i32, y: i32) {
@@ -161,16 +162,47 @@ pub fn seed(app: &mut App) {
             paired: true,
         },
     ];
-    app.st.display.outputs = vec![DisplayOutput {
-        name: "eDP-1".into(),
-        modes: vec![
-            "1366x768".into(),
-            "1280x720".into(),
-            "1024x768".into(),
-            "800x600".into(),
-        ],
-        current: Some("1366x768".into()),
-    }];
+    let mode = |w, h, current: bool| Mode {
+        width: w,
+        height: h,
+        refresh: 60.0,
+        preferred: current,
+        current,
+    };
+    app.st.display.outputs = vec![
+        Output {
+            name: "eDP-1".into(),
+            make: "BOE".into(),
+            model: "0x095F".into(),
+            enabled: true,
+            position: (0, 0),
+            scale: 1.0,
+            transform: "normal".into(),
+            physical: (340, 190),
+            modes: vec![
+                mode(1366, 768, true),
+                mode(1280, 720, false),
+                mode(1024, 768, false),
+                mode(800, 600, false),
+            ],
+            ..Default::default()
+        },
+        Output {
+            name: "HDMI-A-1".into(),
+            make: "Goldstar Company Ltd".into(),
+            model: "LG TV".into(),
+            serial: "0x01010101".into(),
+            enabled: true,
+            position: (1366, 0),
+            scale: 1.0,
+            transform: "normal".into(),
+            physical: (1600, 900),
+            modes: vec![mode(1920, 1080, true), mode(1280, 720, false)],
+            ..Default::default()
+        },
+    ];
+    app.st.display.main_name = "eDP-1".into();
+    app.st.display.main_identity = Some(app.st.display.outputs[0].identity());
     app.st.updates_note = vec![
         "$ apt-get update".into(),
         "Hit:1 http://deb.debian.org/debian trixie InRelease".into(),
@@ -315,6 +347,22 @@ pub fn render_all(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
         &window_with(&mut app, w, h, WindowKind::Settings),
         dir.join("09-settings-appearance.png"),
     )?);
+
+    // The display page with a laptop and a television, which is exactly the
+    // case the arrangement diagram exists for.
+    app.st.settings.section = ui::Section::Display;
+    app.st.display.selected = 1;
+    out.push(save(
+        &window_with(&mut app, w, h, WindowKind::Settings),
+        dir.join("11-settings-display.png"),
+    )?);
+    app.st.display.identify_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(30));
+    out.push(save(
+        &desktop_with(&mut app, w, h, &[]),
+        dir.join("12-display-identify.png"),
+    )?);
+    app.st.display.identify_until = None;
+    app.st.settings.section = ui::Section::Updates;
 
     app.st.wifi.pending = Some("Neighbour's router".into());
     app.st.wifi.password = "hunter".into();

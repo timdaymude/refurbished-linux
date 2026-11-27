@@ -189,6 +189,37 @@ OS. It is ordered by how much it could hurt.
   exercise the wizard, the partitioning, the bootloader module and the target
   system, but not the machine's firmware, its eMMC and its USB behaviour.
 
+## Round 17 additions
+
+- **The UEFI menu is a text menu, not the artwork.** On this GRUB (2.12, built
+  standalone into the EFI image) a gfxmenu theme drew its frame, background and
+  countdown bar but never the entry text, leaving a black panel with no visible
+  entries. GRUB's own text menu lists all three entries correctly, so the UEFI
+  image uses that and the artwork theme is the BIOS side's (`vesamenu`). The
+  UEFI image did gain the storage drivers it was missing (`ahci`, `ata`, `pata`,
+  `scsi`, `usb`, `usbms`, `uhci`, `ohci`, `ehci`); without them GRUB could not
+  see the optical drive or a USB stick at all. Theming the UEFI menu needs a
+  theme/font combination this GRUB accepts, which was not found this round.
+- **Multi-monitor arrangement was not exercised with two real screens.** QEMU
+  here cannot present two simultaneously active outputs. Drag, drop, Identify
+  and the per-EDID restore were tested against a three-output headless
+  compositor; real EDIDs, mixed DPI and cable order still need the hardware.
+- **"Set as Desktop Wallpaper" replaces the r16 PCManFM custom action.** PCManFM
+  1.4.0 does not load DES-EMA actions at all (the file is present in both the
+  system and user directories and never appears), so the feature ships as a
+  `MimeType` desktop entry instead. It appears in Files' right-click menu and in
+  any other file manager that reads MIME handlers. The DES-EMA file is still
+  installed for file managers that do support it, but it is the entry that is
+  tested.
+- **Installing to disk was not re-run.** Calamares is unchanged from r14/r16,
+  but no install and reboot-without-medium was performed from this ISO.
+- **The idle numbers are emulator numbers.** About 460–480 MB in use at
+  1280×800 with a terminal open (shell RSS 54 MB), on TCG. They say the shell's
+  own cost did not move; they are not a hardware measurement and the 2 GB
+  viability check on Craig is still the owner's.
+- **Google Drive was not updated.** CURRENT STATUS and the master index could
+  not be reached from the build environment.
+
 ## Round 16 additions
 
 - **The store is heavier than the 10 MiB target while it is open.** GNOME

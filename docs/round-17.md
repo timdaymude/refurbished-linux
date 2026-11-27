@@ -157,6 +157,17 @@ sessions on this emulator: same race, much smaller window.
 (mode-less modes, three-screen `setups()` ordering), the arrangement sentence,
 the wallpaper catalogue and personal-install naming, and clock formatting.
 
+## Screenshots
+
+- `docs/screenshots/r17-bios-menu.png` — the BIOS menu with the wordmark out of
+  the way of the entries.
+- `docs/screenshots/r17-appearance-wallpapers.png` — Settings → Appearance and
+  the six built-in wallpapers.
+- `docs/screenshots/r17-wallpaper-set.png` — Files after "Set as Desktop
+  Wallpaper" on `reawakening-orbit.jpg`, with the toast.
+- `docs/screenshots/r17-uefi-text-menu.png` — the UEFI text menu (countdown
+  raised to 40 s for the capture; the shipped countdown is 5 s).
+
 ## What this round did not verify
 
 - **Installing to disk and booting the installed system.** Calamares is carried

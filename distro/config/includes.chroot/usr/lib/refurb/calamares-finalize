@@ -17,6 +17,18 @@ rm -f /etc/sudoers.d/50-refurb-live /etc/sudoers.d/refurb-live
 rm -f /usr/lib/refurb/refurb-install /usr/bin/refurb-install \
       /usr/share/applications/refurb-install.desktop
 
+# The live desktop's "Install Reawakening OS" shortcut belongs to the live
+# medium only. Calamares builds the installed account from /etc/skel, so the
+# copy in the live home normally never arrives; remove it from the skeleton and
+# from any home in the target anyway, rather than leaving an installer icon on
+# the desktop of a machine that is already installed.
+rm -f "/etc/skel/Desktop/Install Reawakening OS.desktop"
+rmdir /etc/skel/Desktop 2>/dev/null || true
+for shortcut_home in /home/*; do
+    [ -d "$shortcut_home/Desktop" ] || continue
+    rm -f "$shortcut_home/Desktop/Install Reawakening OS.desktop"
+done
+
 # Remove live-boot leftovers even if the packages job could not purge them.
 rm -rf /etc/live /lib/live
 rm -f /etc/initramfs-tools/hooks/live /etc/initramfs-tools/scripts/live

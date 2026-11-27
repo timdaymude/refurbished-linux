@@ -299,15 +299,24 @@ if [ -f "$DISTRO/config/boot-theme/theme.txt" ] && \
 else
     err "the boot theme is not wired into the image"
 fi
-# The UEFI image deliberately runs GRUB's own text menu: on GRUB 2.12 the
-# gfxmenu theme drew its frame and countdown bar but no entry text, which left
-# a black panel with nothing to choose. The check therefore asserts the plain
-# menu (no theme set on the UEFI side) and the documented reason.
-if ! grep -q 'set theme=' "$ROOT/scripts/mkiso.sh" && \
-   grep -q 'No gfxmenu theme on UEFI' "$ROOT/scripts/mkiso.sh"; then
-    ok "the UEFI menu is GRUB's own text menu, with the reason recorded"
+# The UEFI menu is the same gfxmenu theme as the BIOS side, embedded in the
+# EFI image. Two things once kept its text invisible: no platform video driver
+# was loaded (the menu silently stayed on the VGA text console) and theme.txt
+# asked for "Unifont Regular 16" while unicode.pf2 registers as "GNU Unifont
+# Regular 16". The check asserts both fixes and the text fallback.
+if grep -q 'set theme=' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'insmod efi_gop' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'if terminal_output gfxterm' "$ROOT/scripts/mkiso.sh" && \
+   grep -q 'GNU Unifont Regular 16' "$DISTRO/config/boot-theme/theme.txt" && \
+   grep -q 'boot/grub/themes/reawakening' "$ROOT/scripts/mkiso.sh"; then
+    ok "the UEFI menu is the graphical theme, with a gfxterm text fallback"
 else
-    err "the UEFI menu is neither themed nor documented as text"
+    err "the UEFI menu would fall back to text or draw no labels"
+fi
+if grep -q 'GRUB_FONT="/boot/grub/fonts/unicode.pf2"' "$INC/etc/default/grub"; then
+    ok "the installed system loads the font the theme names"
+else
+    err "the installed GRUB would draw a theme with no text"
 fi
 
 echo "== r17: more wallpapers, a right-click route, screens and the clock"
@@ -401,6 +410,36 @@ if grep -q 'wordmark == "right"' "$ROOT/scripts/make-boot-theme.py"; then
     ok "the BIOS backdrop keeps its wordmark clear of the entry list"
 else
     err "the BIOS backdrop wordmark can overlap the menu entries"
+fi
+
+echo "== r17.1: graphical UEFI menu, live installer icon, every app on the desktop"
+if grep -q 'Install Reawakening OS.desktop' \
+       "$DISTRO/config/hooks/normal/0500-session.hook.chroot" && \
+   grep -q 'Install Reawakening OS.desktop' \
+       "$INC/usr/lib/refurb/calamares-finalize" && \
+   [ -f "$INC/usr/share/applications/refurb-install.desktop" ]; then
+    ok "the live desktop gets an installer shortcut, and installation removes it"
+else
+    err "the installer shortcut is missing, or would survive an installation"
+fi
+if grep -q '<policy>cursor</policy>' "$INC/etc/xdg/labwc/rc.xml"; then
+    ok "new windows open on the monitor under the pointer (labwc placement)"
+else
+    err "a launch on a second monitor would open on the primary one"
+fi
+if grep -q 'Action::LauncherAdd' "$ROOT/shell/refurb-shell/src/session/mod.rs" && \
+   grep -q 'launcher_menu' "$ROOT/shell/refurb-shell/src/ui/launcher.rs" && \
+   grep -q 'shortcut_in_dir' "$ROOT/shell/refurb-shell/src/desktop.rs" && \
+   grep -q 'DeskMenuShortcuts' "$ROOT/shell/refurb-shell/src/session/mod.rs"; then
+    ok "the launcher can add any installed application to the desktop"
+else
+    err "the desktop shortcut picker does not cover every application"
+fi
+
+if ! grep -q 'No gfxmenu theme on UEFI' "$ROOT/scripts/mkiso.sh"; then
+    ok "the old UEFI text-menu workaround is gone"
+else
+    err "the UEFI menu still forces the text fallback"
 fi
 
 echo "== no update daemon, packagekit or indexer is enabled"

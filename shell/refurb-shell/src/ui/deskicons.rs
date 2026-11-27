@@ -99,19 +99,38 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
             }
         }
 
-        // A two-line label would need wrapping; one ellipsized line is what a
-        // 90-pixel cell can show and still be legible at 12 px.
-        let label = cx.ellip(&icon.name, theme::T_SMALL, MEDIUM, tile.width() - 6.0);
-        cx.tc(
-            tile.x(),
-            tile.width(),
-            chip.bottom() + 3.0,
-            28.0,
-            &label,
-            theme::T_SMALL,
-            MEDIUM,
-            theme::ink(),
-        );
+        // Labels are one line where that fits. "Install Reawakening OS" does
+        // not fit a 90-pixel cell at 12 px, and ellipsizing the name of the
+        // live installer would hide what it is, so a long name is balanced
+        // onto two lines instead (still the same small, centred label style).
+        let lines = label_lines(cx, &icon.name, tile.width() - 6.0, theme::T_SMALL - 0.5);
+        if lines.len() > 1 {
+            let size = theme::T_SMALL - 0.5;
+            for (n, line) in lines.iter().enumerate() {
+                cx.tc(
+                    tile.x(),
+                    tile.width(),
+                    chip.bottom() + 2.0 + n as f32 * 13.0,
+                    13.0,
+                    line,
+                    size,
+                    MEDIUM,
+                    theme::ink(),
+                );
+            }
+        } else {
+            let label = lines.first().cloned().unwrap_or_default();
+            cx.tc(
+                tile.x(),
+                tile.width(),
+                chip.bottom() + 3.0,
+                28.0,
+                &label,
+                theme::T_SMALL,
+                MEDIUM,
+                theme::ink(),
+            );
+        }
         cx.hit(tile, Action::DeskIcon(i));
     }
 
@@ -140,21 +159,43 @@ pub fn draw(cx: &mut Ctx, w: f32, h: f32) {
     }
 }
 
+/// Split a name into at most two lines that each fit `width`, balancing the
+/// words rather than filling the first line and leaving one word on the second.
+/// A single word that is too wide falls back to an ellipsized line.
+fn label_lines(cx: &mut Ctx, name: &str, width: f32, size: f32) -> Vec<String> {
+    if cx.measure(name, size, MEDIUM) <= width {
+        return vec![name.to_string()];
+    }
+    let words: Vec<&str> = name.split_whitespace().collect();
+    if words.len() < 2 {
+        return vec![cx.ellip(name, size, MEDIUM, width)];
+    }
+    let mut best: Option<(f32, usize)> = None;
+    for split in 1..words.len() {
+        let first = words[..split].join(" ");
+        let second = words[split..].join(" ");
+        let widest = cx
+            .measure(&first, size, MEDIUM)
+            .max(cx.measure(&second, size, MEDIUM));
+        if best.map_or(true, |(w, _)| widest < w) {
+            best = Some((widest, split));
+        }
+    }
+    match best {
+        Some((widest, split)) if widest <= width => {
+            vec![words[..split].join(" "), words[split..].join(" ")]
+        }
+        _ => vec![cx.ellip(name, size, MEDIUM, width)],
+    }
+}
+
 fn draw_menu(cx: &mut Ctx, w: f32, h: f32, menu: &desk::Menu) {
     // Any press that misses a row closes the menu; rows are registered after
     // this region and win over it.
     cx.hit(render::rect(0.0, 0.0, w, h), Action::DeskMenuClose);
 
     let mut items: Vec<(String, icons::Glyph, Action)> = Vec::new();
-    if menu.shortcuts {
-        for &idx in &cx.st.pinned {
-            let Some(app) = cx.st.apps.get(idx) else {
-                continue;
-            };
-            items.push((app.name.clone(), super::glyph_for(app), Action::DeskShortcut(idx)));
-        }
-        items.push(("Back".to_string(), icons::Glyph::ChevronRight, Action::DeskMenuEmpty));
-    } else if menu.icon.is_some() {
+    if menu.icon.is_some() {
         items.push(("Open".to_string(), icons::Glyph::ChevronRight, Action::DeskOpen));
         items.push(("Rename…".to_string(), icons::Glyph::Doc, Action::DeskRename));
         items.push(("Move to Trash".to_string(), icons::Glyph::Close, Action::DeskDelete));

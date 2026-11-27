@@ -352,3 +352,34 @@ OS. It is ordered by how much it could hurt.
   of showing "Listening" forever. On hardware with a working microphone the
   stream always carries data, so this only surfaces for a missing, muted or
   permission-blocked device.
+
+## Round 17.1 additions
+
+- **The graphical boot menu is proven under OVMF and SeaBIOS, not on the
+  owner's firmware.** Both menu paths were booted from the shipped image and
+  captured (`docs/screenshots/r17-1-uefi-menu.png`,
+  `docs/screenshots/r17-1-bios-menu.png`), but a machine whose UEFI video
+  driver behaves differently, or that has no GOP and no UGA, can still fall back
+  to the text menu. That fallback is deliberate and was observed on purpose
+  during the investigation: if `terminal_output gfxterm` fails, GRUB keeps its
+  text console and every entry remains selectable.
+- **"Open on the monitor you clicked" is labwc's cursor placement policy, not
+  shell code that moves windows.** A Wayland client cannot place another
+  application's surface; forcing it would break applications that map their
+  window late. The consequence is that a client which asks for a specific
+  position through `xdg-shell` may still choose it, and a single-instance
+  application only gets focused where it already is. The policy was verified as
+  a setting and on one output; two physical monitors remain the owner's test.
+- **A desktop shortcut is a copy of the desktop entry, not a reference.** It
+  keeps working if the entry is edited, but if the application is uninstalled
+  the shortcut stays behind and fails to open; remove it with **Move to Trash**.
+  A Flatpak shortcut keeps its `flatpak run` command and application id, so it
+  stops rather than launching a similarly named binary.
+- **The picker is the launcher in a second mode, not a second manager.** It
+  lists exactly what the launcher lists, so an installed programme without a
+  desktop entry still cannot be placed on the desktop, and a newly installed
+  one appears because the same inotify watch refreshes both.
+- **The live installer shortcut is created by `0500-session.hook.chroot` and
+  removed by `calamares-finalize`.** Renaming the live account or its desktop
+  folder means changing both places; the check in `scripts/check-config.sh`
+  names the file so a rename cannot pass silently.

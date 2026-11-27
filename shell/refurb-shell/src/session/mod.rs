@@ -1136,12 +1136,16 @@ impl Session {
             Action::Nothing => {}
             Action::LauncherOpen => {
                 self.app.st.launcher_open = true;
+                self.app.st.picking = false;
+                self.app.st.launcher_menu = None;
                 self.app.st.quick_open = false;
                 self.app.st.focus = Focus::Launcher;
                 self.app.st.query.clear();
             }
             Action::LauncherClose => {
                 self.app.st.launcher_open = false;
+                self.app.st.picking = false;
+                self.app.st.launcher_menu = None;
                 self.app.st.focus = Focus::None;
             }
             Action::LauncherChar(c) => {
@@ -1159,8 +1163,19 @@ impl Session {
                     }
                 }
                 self.app.st.launcher_open = false;
+                self.app.st.picking = false;
+                self.app.st.launcher_menu = None;
                 self.app.st.focus = Focus::None;
             }
+            Action::LauncherAdd(i) => self.add_shortcut(i),
+            Action::LauncherMenu(i) => {
+                self.app.st.launcher_menu = Some(crate::ui::LauncherMenu {
+                    app: i,
+                    x: self.pointer_pos.0 as f32,
+                    y: self.pointer_pos.1 as f32,
+                });
+            }
+            Action::LauncherMenuClose => self.app.st.launcher_menu = None,
             Action::SearchWeb => {
                 let query = self.app.st.query.trim().to_string();
                 if !query.is_empty() {
@@ -1184,7 +1199,6 @@ impl Session {
                 self.app.st.desk.selected = Some(index);
                 self.app.st.desk.menu = Some(desk::Menu {
                     icon: Some(index),
-                    shortcuts: false,
                     x: self.pointer_pos.0 as f32,
                     y: self.pointer_pos.1 as f32,
                 });
@@ -1193,29 +1207,24 @@ impl Session {
                 self.app.st.desk.selected = None;
                 self.app.st.desk.menu = Some(desk::Menu {
                     icon: None,
-                    shortcuts: false,
                     x: self.pointer_pos.0 as f32,
                     y: self.pointer_pos.1 as f32,
                 });
             }
             Action::DeskMenuClose => self.app.st.desk.menu = None,
+            // "Add Application Shortcut" opens the launcher in its picker
+            // mode. The picker is the same catalogue the launcher already
+            // searches, so every installed application — APT or Flatpak, and
+            // anything installed a moment ago — is reachable, without a second
+            // application list to keep in step.
             Action::DeskMenuShortcuts => {
-                if let Some(menu) = &mut self.app.st.desk.menu {
-                    menu.shortcuts = true;
-                }
-            }
-            Action::DeskShortcut(index) => {
                 self.app.st.desk.menu = None;
-                let Some(app) = self.app.st.apps.get(index).cloned() else {
-                    return;
-                };
-                match desk::install_shortcut(&app) {
-                    Ok(name) => {
-                        desk::refresh(&mut self.app.st.desk, true);
-                        self.app.st.desk.say(format!("Added {name} to the desktop"));
-                    }
-                    Err(error) => self.app.st.desk.say(error),
-                }
+                self.app.st.picking = true;
+                self.app.st.launcher_open = true;
+                self.app.st.launcher_menu = None;
+                self.app.st.quick_open = false;
+                self.app.st.focus = Focus::Launcher;
+                self.app.st.query.clear();
             }
             Action::DeskOpen => {
                 self.app.st.desk.menu = None;
@@ -1722,6 +1731,33 @@ impl Session {
     // -- desktop ---------------------------------------------------------
 
     /// A taskbar icon focuses its running window, or starts the application.
+    /// Put an installed application's own desktop entry on the desktop. The
+    /// entry is copied, not synthesised, so a Flatpak keeps its `flatpak run`
+    /// command line and an APT application keeps its Exec line exactly as the
+    /// launcher sees it.
+    fn add_shortcut(&mut self, index: usize) {
+        let Some(app) = self.app.st.apps.get(index).cloned() else {
+            return;
+        };
+        self.app.st.launcher_menu = None;
+        self.app.st.launcher_open = false;
+        self.app.st.picking = false;
+        self.app.st.focus = Focus::None;
+        if desk::existing_shortcut(&app).is_some() {
+            self.app.st
+                .desk
+                .say(format!("{} is already on the desktop", app.name));
+            return;
+        }
+        match desk::install_shortcut(&app) {
+            Ok(name) => {
+                desk::refresh(&mut self.app.st.desk, true);
+                self.app.st.desk.say(format!("Added {name} to the desktop"));
+            }
+            Err(error) => self.app.st.desk.say(error),
+        }
+    }
+
     fn launch_pinned(&mut self, index: usize) {
         let Some(app) = self.app.st.apps.get(index).cloned() else {
             return;
@@ -2387,13 +2423,22 @@ impl Session {
             return;
         }
         if self.app.st.launcher_open {
+            // Escape closes an open right-click menu first, then the launcher.
+            if key == Key::Escape && self.app.st.launcher_menu.is_some() {
+                self.dispatch(Action::LauncherMenuClose);
+                return;
+            }
             match key {
                 Key::Char(c) => self.dispatch(Action::LauncherChar(c)),
                 Key::Backspace => self.dispatch(Action::LauncherBackspace),
                 Key::Enter => {
                     let first = self.app.launcher_results().first().copied();
                     match first {
+                        Some(index) if self.app.st.picking => {
+                            self.dispatch(Action::LauncherAdd(index))
+                        }
                         Some(index) => self.dispatch(Action::Launch(index)),
+                        None if self.app.st.picking => {}
                         None => self.dispatch(Action::SearchWeb),
                     }
                 }
@@ -2477,6 +2522,18 @@ impl Session {
         // empty wallpaper. There is no other right-click behaviour in the shell.
         if button == RIGHT {
             self.pointer_down = false;
+            // Right-clicking an application in the launcher offers "Open" and
+            // "Add to Desktop". It is the same catalogue and the same shortcut
+            // installer as the desktop's own menu.
+            if matches!(surface, Surface::Launcher) {
+                match found {
+                    Some((_, Action::Launch(index))) => {
+                        self.dispatch(Action::LauncherMenu(index))
+                    }
+                    _ => self.dispatch(Action::LauncherMenuClose),
+                }
+                return;
+            }
             if !matches!(surface, Surface::Desktop) {
                 return;
             }

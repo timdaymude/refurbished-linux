@@ -114,6 +114,15 @@ pub struct Toplevel {
     pub active: bool,
 }
 
+/// The launcher's right-click menu: which application it is for, and where the
+/// pointer asked for it.
+#[derive(Clone, Copy, Debug)]
+pub struct LauncherMenu {
+    pub app: usize,
+    pub x: f32,
+    pub y: f32,
+}
+
 /// A part of the system that an established program handles better than this
 /// shell can: the full NetworkManager, BlueZ and PipeWire interfaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +140,12 @@ pub enum Action {
     LauncherChar(char),
     LauncherBackspace,
     Launch(usize),
+    /// Put this installed application's shortcut on the desktop (the launcher
+    /// picker and the launcher's right-click menu both use this).
+    LauncherAdd(usize),
+    /// Open the launcher's right-click menu for an application.
+    LauncherMenu(usize),
+    LauncherMenuClose,
     /// A taskbar icon: focus the running window, or start the application.
     LaunchPinned(usize),
     /// A click on a desktop icon (selects it, or opens it on a double click).
@@ -141,7 +156,6 @@ pub enum Action {
     DeskMenuEmpty,
     DeskMenuClose,
     DeskMenuShortcuts,
-    DeskShortcut(usize),
     DeskOpen,
     DeskRename,
     DeskDelete,
@@ -357,6 +371,11 @@ pub fn bar_is_bottom() -> bool {
 pub struct State {
     pub view: Surface,
     pub launcher_open: bool,
+    /// True while the launcher is being used to choose an application for the
+    /// desktop instead of launching it. One picker, not a second menu system.
+    pub picking: bool,
+    /// The launcher's open right-click menu, if any.
+    pub launcher_menu: Option<LauncherMenu>,
     pub quick_open: bool,
     /// The power action waiting for confirmation, if the dialog is open.
     pub confirm: Option<PowerAction>,
@@ -404,6 +423,8 @@ impl Default for State {
         Self {
             view: Surface::Bar,
             launcher_open: false,
+            picking: false,
+            launcher_menu: None,
             quick_open: false,
             confirm: None,
             confirm_danger: false,
@@ -671,6 +692,10 @@ pub fn glyph_for(app: &DesktopApp) -> icons::Glyph {
         icons::Glyph::Folder
     } else if has("setting") {
         icons::Glyph::Gear
+    } else if has("install") || has("calamares") {
+        // The live desktop's installer shortcut and the launcher's installer
+        // entry: a download arrow reads as "put this on the disk".
+        icons::Glyph::Download
     } else if has("cockpit") {
         icons::Glyph::Shield
     } else if has("store") || has("software") {

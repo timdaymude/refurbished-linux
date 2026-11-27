@@ -24,6 +24,7 @@ full per-release report.
 | 0.3.0-r15 DDE Store, Cockpit remote fixed **(prerelease)** | 1,187,692,544 | `21c7477d05f6c4e7d9f8fb5832809fd49d379d9377ed8b63d26b73909745e9f3` | `v0.3.0-r15` — `reawakening-os-0.3.0-r15-amd64.iso` | none (release is the copy) |
 | 0.3.0-r16 GNOME Software store, launcher discovery, boot theme, cursor and updater fixes **(prerelease)** | 1,237,876,736 | `2fb11d141a2d8d3354dd99acdc58b3c539513e54591a4a6249898534b55554e3` | `v0.3.0-r16` — `reawakening-os-0.3.0-r16-amd64.iso` | none (release is the copy) |
 | 0.3.0-r17 wallpapers, Set as Desktop Wallpaper, multi-monitor panel, 12/24-hour clock, boot menu scaling **(prerelease)** | 1,263,861,760 | `b6941bf5b57b5f9952d4df469fef8f31af720c9f6f05570d0a2c58737459395a` | `v0.3.0-r17` — `reawakening-os-0.3.0-r17-amd64.iso` | none (release is the copy) |
+| 0.3.0-r17.1 graphical UEFI menu, live installer shortcut, every app on the desktop, per-monitor launches **(prerelease)** | 1,272,578,048 | `007318ce6d733d643c61030ca30b77de333c0ee783110a9ec84cb36de312ddbf` | `v0.3.0-r17.1` — `reawakening-os-0.3.0-r17.1-amd64.iso` | none (release is the copy) |
 
 ## Naming
 
@@ -37,6 +38,21 @@ applies to new images only.
 
 ## How each one was verified
 
+- **r17.1**: published as a prerelease with the ISO and its `.sha256` report.
+  Verified from the shipped ISO in QEMU: the UEFI menu is the branded graphical
+  GRUB theme (artwork, three entries, selection highlight and countdown) and the
+  BIOS menu is unchanged; the live desktop shows **Install Reawakening OS** with
+  a readable two-line label, and Calamares starts from it; the desktop's "Add
+  Application Shortcut" opens a picker of every installed application, and a
+  right-click in the launcher offers **Add to Desktop**; a full Calamares
+  install booted from the disk with no medium, with no installer shortcut and no
+  installer entry in its launcher; APT and Flatpak shortcuts were added from
+  the picker, VLC started from its shortcut, all six shortcuts survived a
+  reboot, and idle memory on the installed system was 451 MB of 1,973 MB with
+  the shell at 56 MB. The two boot-menu faults were found and fixed: the theme
+  asked for a font name unicode.pf2 does not register, and gfxterm never left
+  the VGA text console because no UEFI video driver was initialised. Details in
+  `round-17-1.md`.
 - **r17**: published as a prerelease with the ISO and its `.sha256` report.
   Verified from the shipped ISO in QEMU (BIOS, `-cpu qemu64`, 2 GB): the
   desktop and bar survive boot; Settings → Appearance shows six wallpapers and

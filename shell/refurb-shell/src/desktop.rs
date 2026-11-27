@@ -21,7 +21,7 @@ use crate::apps::{self, App as DesktopApp};
 /// for the icon plus two short lines; five rows fit a 600-pixel-tall screen
 /// above the taskbar, and wider screens simply leave more empty space beside
 /// the column instead of hiding icons off the bottom.
-pub const CELL_W: f32 = 90.0;
+pub const CELL_W: f32 = 100.0;
 pub const CELL_H: f32 = 88.0;
 pub const ORIGIN_X: f32 = 20.0;
 pub const ORIGIN_Y: f32 = 16.0;
@@ -53,8 +53,6 @@ pub struct Icon {
 pub struct Menu {
     /// The icon the menu was opened on; `None` for the desktop itself.
     pub icon: Option<usize>,
-    /// True while the "Add shortcut" list of applications is showing.
-    pub shortcuts: bool,
     pub x: f32,
     pub y: f32,
 }
@@ -581,6 +579,47 @@ pub fn new_folder() -> Result<String, String> {
 /// copy is the user's own file, mode 0755, which is exactly what
 /// `trusted_shortcut` asks for: the trust comes from the system directory the
 /// file was copied out of, not from the fact that it sits on the desktop.
+/// The label of a shortcut for `app` already on the desktop, if there is one.
+/// `dir` is explicit so the lookup can be tested without touching $HOME.
+///
+/// The comparison is on the copied entry's `Exec`, not its file name: the copy
+/// on the desktop is named after the application ("Brave.desktop"), while the
+/// installed entry's id is `brave-browser`, so ids never match. Two copies of
+/// the same entry always share the same Exec line.
+pub fn shortcut_in_dir(dir: &Path, exec: &str) -> Option<String> {
+    let exec = exec.trim();
+    if exec.is_empty() {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        if let Some(parsed) = apps::parse_desktop(stem, &text) {
+            if parsed.exec.trim() == exec {
+                return Some(parsed.name);
+            }
+        }
+    }
+    None
+}
+
+/// Whether this application already has a shortcut on the desktop. Adding the
+/// same application twice used to make "Brave 2.desktop"; one shortcut per
+/// application is what people expect from a menu that says "Add to Desktop".
+pub fn existing_shortcut(app: &DesktopApp) -> Option<String> {
+    shortcut_in_dir(&dir(), &app.exec)
+}
+
 pub fn install_shortcut(app: &DesktopApp) -> Result<String, String> {
     let source = apps::desktop_file(&app.id)
         .ok_or_else(|| format!("No shortcut file is installed for {}.", app.name))?;
@@ -701,6 +740,27 @@ mod tests {
         assert_eq!(unique_name(&dir, "a.txt"), "a.txt");
         std::fs::write(dir.join("a.txt"), b"x").unwrap();
         assert_eq!(unique_name(&dir, "a.txt"), "a 2.txt");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_shortcut_is_found_by_its_desktop_id() {
+        let dir = std::env::temp_dir().join(format!("refurb-shortcut-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Brave.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave-browser %U\n",
+        )
+        .unwrap();
+        // The installed entry's id is brave-browser; the copy is named Brave.
+        // The Exec line is what identifies it, which is why an id comparison
+        // used to create a second "Brave 2.desktop".
+        assert_eq!(
+            shortcut_in_dir(&dir, "brave-browser %U").as_deref(),
+            Some("Brave")
+        );
+        assert_eq!(shortcut_in_dir(&dir, "flatpak run org.videolan.VLC"), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

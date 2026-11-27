@@ -4,7 +4,7 @@
 
 A small, quick, browser-first operating system for computers that modern systems
 have left behind: dual-core, 2 GB of RAM, an old integrated GPU, a spinning disk.
-Version **0.3.0** (release r15, test image) — dark by default, with a bootable ISO that
+Version **0.3.0** (release r17.1, test image) — dark by default, with a bootable ISO that
 installs with the Calamares graphical installer and ships the Reawakening
 wallpapers.
 
@@ -41,6 +41,31 @@ icons, its own font, its own interaction model — running on top of the tiny
 ## Status: read this before trusting anything
 
 **Verified**
+
+- `reawakening-os-0.3.0-r17.1-amd64.iso` builds end to end and is
+  **1,272,578,048 bytes** with SHA256
+  (`007318ce6d733d643c61030ca30b77de333c0ee783110a9ec84cb36de312ddbf`). r17.1
+  finishes the desktop. The **branded graphical boot menu is back on UEFI**: the
+  two faults behind r17's text fallback were found and fixed — `theme.txt`
+  asked for a font name the shipped `unicode.pf2` does not register (`GNU
+  Unifont Regular 16`), and no UEFI video driver was loaded, so
+  `terminal_output gfxterm` never left the VGA console. The live desktop shows
+  **Install Reawakening OS**, and the installed system has neither that
+  shortcut nor an installer entry. **Every installed application** — APT or
+  Flatpak, including one installed while the session is running — can be put on
+  the desktop from a picker behind **Add Application Shortcut** or from a
+  launcher right-click, through a copy of its own desktop entry (so a Flatpak
+  keeps `flatpak run`). A launch opens on the monitor whose launcher was used,
+  through labwc's cursor placement. Verified from the shipped ISO in QEMU: both
+  boot menus render as designed; the live shortcut wraps onto two readable
+  lines and starts Calamares; a full installation boots from its disk with no
+  medium, an empty desktop and no installer in the launcher; Brave, Files,
+  Terminal, `galculator` (APT), VLC and KCalc (both Flatpak) were added from the
+  picker, VLC started from its shortcut, and all six survived a reboot; the
+  launcher lists 23 applications; idle memory is 451 MB of 1,973 MB with the
+  shell at 56 MB and no swap in use. Not yet verified: two physical monitors, a
+  Flatpak installed through the store's button, and anything on real hardware,
+  including Craig's 2 GB machine — see `docs/round-17-1.md`.
 
 - `reawakening-os-0.3.0-r16-amd64.iso` builds end to end and is
   **1,237,876,736 bytes** with SHA256

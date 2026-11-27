@@ -425,13 +425,29 @@ EOF
 set timeout=5
 set default=0
 
+# Video. `insmod all_video` alone is not enough on this standalone image:
+# measured under OVMF, the menu stayed on the VGA text console (blue box,
+# 800x600) because no platform video driver had been initialised. Name the
+# UEFI driver explicitly; efi_uga is the fallback for firmware without GOP.
+insmod efi_gop
+insmod efi_uga
 insmod all_video
 insmod gfxterm
 insmod gfxmenu
 insmod png
 set gfxmode=auto,1920x1080,1600x900,1366x768,1024x768,800x600
 loadfont ($prefix)/fonts/unicode.pf2
-terminal_output gfxterm
+
+# Graphics only if the mode really switches. If it does not, GRUB stays on its
+# text console: that is the working plain-text fallback, and it still boots.
+if terminal_output gfxterm; then
+    # The theme is embedded in this EFI image, so the artwork does not depend
+    # on the medium being readable yet ($prefix is (memdisk)/boot/grub).
+    if [ -f ($prefix)/themes/reawakening/theme.txt ]; then
+        set theme=($prefix)/themes/reawakening/theme.txt
+        export theme
+    fi
+fi
 
 # GRUB starts with $root on the device it was loaded from. On UEFI that is the
 # 10 MB FAT image carrying this binary (label REFURBEFI), which never contains
@@ -455,12 +471,15 @@ if [ "$live_found" = 0 ]; then
     fi
 fi
 
-# No gfxmenu theme on UEFI. On this GRUB (2.12, built standalone) the themed
-# menu drew its frame and countdown bar but never its entry text, leaving a
-# black panel with no visible entries - unusable on a UEFI-only machine.
-# GRUB's own text menu lists all three entries, so that is used here on
-# purpose: the artwork theme is the BIOS side's job (isolinux/vesamenu below)
-# and the plain menu is the documented text fallback for UEFI.
+# If the theme is not embedded (an old build tree), fall back to the copy on
+# the medium. A missing theme is not fatal: GRUB prints one error and shows its
+# own text menu, which is why the fallback is safe.
+if [ -z "$theme" ]; then
+    if [ -f ($root)/boot/grub/themes/reawakening/theme.txt ]; then
+        set theme=($root)/boot/grub/themes/reawakening/theme.txt
+        export theme
+    fi
+fi
 
 menuentry "Start Reawakening OS" {
     linux ($root)/live/vmlinuz boot=live components console=tty0 console=ttyS0,115200 live-config.nottyautologin quiet splash
@@ -485,11 +504,19 @@ EOF
         # iso9660/udf: reading the ISO volume itself; search_fs_file and
         # search_label: the --file and --label forms used above (plain
         # "search" alone only offers --fs-uuid).
+        # Embed the theme in the EFI image itself: one file on the medium can be
+        # present but unreadable (a damaged ISO, a USB stick written badly), and
+        # the boot menu should still be the branded one. The files are the same
+        # ones installed to /boot/grub/themes for the installed system's GRUB.
+        theme_files=""
+        for theme_file in "$DISTRO"/config/boot-theme/*; do
+            theme_files="$theme_files boot/grub/themes/reawakening/$(basename "$theme_file")=$theme_file"
+        done
         grub-mkstandalone --directory "$GRUB_MOD" -O x86_64-efi \
-            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video gfxterm gfxmenu png font gfxterm_background ahci ata pata scsi usb usbms uhci ohci ehci" \
+            --modules="part_gpt part_msdos fat exfat ext2 ntfs iso9660 udf normal linux search search_fs_uuid search_fs_file search_label test configfile echo all_video efi_gop efi_uga video_bochs video_cirrus gfxterm gfxmenu png font gfxterm_background ahci ata pata scsi usb usbms uhci ohci ehci" \
             --locales="" --fonts="unicode" --themes="" \
             --output="$WORK/bootx64.efi" \
-            "boot/grub/grub.cfg=$WORK/grub-efi.cfg" || echo "grub-mkstandalone failed: BIOS-only ISO" >&2
+            "boot/grub/grub.cfg=$WORK/grub-efi.cfg" $theme_files || echo "grub-mkstandalone failed: BIOS-only ISO" >&2
     fi
     if [ -f "$WORK/bootx64.efi" ]; then
         rm -f "$WORK/efi.img"

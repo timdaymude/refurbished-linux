@@ -7,19 +7,24 @@
 # behaviour the images rely on as a safety net.
 #
 # Fonts are the ones GRUB itself ships (unicode.pf2), so the theme needs no
-# font files of its own and no font name that a future GRUB might rename.
+# font files of its own. The name must match the font's full name exactly:
+# GRUB looks fonts up by name, and the unicode.pf2 it ships registers as
+# "GNU Unifont Regular 16". An earlier r17 build asked for "Unifont Regular
+# 16"; GRUB found no such font, drew the background and progress bar, and
+# printed no menu text at all. Keep this in step with the unicode.pf2 in
+# grub-common (scripts/check-config.sh verifies it).
 
 desktop-image: "background.png"
 desktop-color: "#14161b"
 title-text: ""
-terminal-font: "Unifont Regular 16"
+terminal-font: "GNU Unifont Regular 16"
 
 + boot_menu {
     left = 20%
     top = 40%
     width = 60%
     height = 40%
-    item_font = "Unifont Regular 16"
+    item_font = "GNU Unifont Regular 16"
     item_color = "#a7aebb"
     selected_item_color = "#eceef2"
     item_height = 34
@@ -42,5 +47,5 @@ terminal-font: "Unifont Regular 16"
     border_color = "#17a08a"
     text = "Booting in %d seconds"
     text_color = "#737b8a"
-    font = "Unifont Regular 16"
+    font = "GNU Unifont Regular 16"
 }

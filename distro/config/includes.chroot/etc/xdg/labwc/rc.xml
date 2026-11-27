@@ -12,8 +12,13 @@
     <primarySelection>true</primarySelection>
   </core>
 
+  <!-- New windows open on the output under the pointer. That is what makes a
+       launch stay on the screen it was started from: the launcher, taskbar and
+       desktop icons are all pointer-driven, so a click on monitor 2 has the
+       pointer on monitor 2. Placement belongs to the compositor; the shell
+       does not try to move another client's window. -->
   <placement>
-    <policy>center</policy>
+    <policy>cursor</policy>
   </placement>
 
   <theme>

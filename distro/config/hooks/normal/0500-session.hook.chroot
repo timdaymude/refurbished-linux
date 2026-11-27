@@ -122,6 +122,21 @@ if ! getent passwd 1000 >/dev/null 2>&1; then
     useradd -m -u 1000 -s /bin/bash -c "Reawakening OS" refurb || true
     passwd -d refurb >/dev/null 2>&1 || true
 fi
+# The live desktop's one-click installer. It goes into the live account's own
+# Desktop directory, which an installed system never inherits: Calamares makes
+# the new account from /etc/skel and removes the live account entirely (see
+# /usr/lib/refurb/calamares-finalize), so no live-only shortcut can reach the
+# installed system. The file is executable and owned by the account, which is
+# what the shell's shortcut trust check asks for, and its Name/Exec are the
+# same desktop entry the application launcher already uses.
+if id refurb >/dev/null 2>&1 && [ -f /usr/share/applications/refurb-install.desktop ]; then
+    live_home=$(getent passwd refurb | cut -d: -f6)
+    install -d -m 0755 "$live_home/Desktop"
+    install -m 0755 /usr/share/applications/refurb-install.desktop \
+        "$live_home/Desktop/Install Reawakening OS.desktop"
+    chown -R "$(stat -c %u:%g "$live_home")" "$live_home/Desktop" 2>/dev/null || true
+fi
+
 for account in refurb user; do
     id "$account" >/dev/null 2>&1 || continue
     for group in video netdev audio input render sudo; do
